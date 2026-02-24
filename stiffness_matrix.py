@@ -259,62 +259,6 @@ print(elast)
 print("areas = ")
 print(areas)
 
-# def get_local_truss_stiffness(E,A,L):
-#     # base local stiffness matrix assumes only axial forces
-#     k_local_base = np.array([[1,0,-1,0],
-#                             [0,0,0,0],
-#                             [-1,0,1,0],
-#                             [0,0,0,0]])
-
-#     # local stiffness matrix
-#     k_local = (E*A/L)*k_local_base
-#     return k_local
-
-   
-# def truss_local_stiffness(nodes, elem, elast, areas):
-#     # a) determine the num elemes in the structure
-#     num_elem = elem.shape[0]
-#     print("There are "+str(num_elem)+" bars")
-#     # b) reduce the idxs of the elems by 1? - not needed in my case, already done
-#     k = [] # list of local stiffness matrs
-#     # d) loop the elems to calculate member len
-#     for m in range(num_elem):
-#         start_node = elem[m,0]
-#         end_node = elem[m,1]
-#         X_start = nodes[start_node, 0]
-#         Y_start = nodes[start_node, 1]
-#         X_end = nodes[end_node, 0]
-#         Y_end = nodes[end_node, 1]
-#         dX = X_end - X_start
-#         dY = Y_end - Y_start
-#         L = np.sqrt(dX**2 + dY**2)
-#         E = elast[m]
-#         A = areas[m]
-#         # c) init the local stiff matrix
-#         # e) calculate the member local stiffness matricies
-#         k.append(get_local_truss_stiffness(E, A, L))
-        
-#     return k
-
-# k = truss_local_stiffness(nodes, elem, elast, areas)
-    
-
-
-## element_global_stiffness 
-## Params:
-    # nodes: 
-        # nodes array: [[x,y]...]
-    # elem:
-        # element array: [[node_idx_start, node_idx_end]...]
-    # elast:
-        # Youngs mod vector: [[elem_1_elast]...]
-    # areas: 
-        # areas vector: [[elem_1_area]...]
-        
-## returns: 
-    #K:
-        # per-element list of global stiffness matricies
-        # [[]]
         
 def element_global_stiffness(nodes, elem, elast, areas):
 
@@ -382,20 +326,38 @@ print(K[9])
 
 
 
+    
+            
+def is_restricted(dof_idx, restrained_dof):
+    return (restrained_dof[0][dof_idx] == 1)
 
-## assemble_global_stiffness
-## Finds pairs of 
-## Params: 
-    # nodes: 
-        # nodes array: [[x,y]...]
-    # elem:
-        # element array: [[node_idx_start, node_idx_end]...]
-    # element_global_stiffness_list:
-        # list of global-coordinate element stiffness matricies
-        
+def count_unrestrained_dof(restrained_dofs):
+    # count the number of unrestrained dof
+    num_unrestr = 0
+    
+    
+    for restr_row in restrained_dofs:
+        if restr_row[0] == 0:
+            num_unrestr += 1
+    
+    return num_unrestr
+
+def get_free_and_restr_idxs(restrained_dofs):
+    free_dof_idxs = []
+    restr_dof_idxs = []
+    for dof_idx in range(len(restrained_dofs)):
+        if restrained_dofs[dof_idx][0] == 1:
+            restr_dof_idxs.append(dof_idx)
+        else:
+            free_dof_idxs.append(dof_idx)
+    return free_dof_idxs, restr_dof_idxs
 
 
-
+def get_subvector(v,idxs_to_keep):
+    # v[choose these rows, choose these cols (:=all)]
+    return v[np.asarray(idxs_to_keep),:]
+    
+    
 def assemble_and_partition(K_members, restrained_dofs, elem):
     ##
     ## Part A: assemble the full structural stiffness matrix
@@ -408,40 +370,131 @@ def assemble_and_partition(K_members, restrained_dofs, elem):
     
     ndof = 2* num_nodes
     
-    # make ndofxndof matrix for the main stiffness matrix
+    num_unrestr = count_unrestrained_dof(restrained_dofs)
+
+    print("Sanity check: ", ndof == len(restrained_dofs))
+
+    # make ndof x ndof matrix for the main stiffness matrix
     
     S = np.zeros((ndof,ndof))
     
     # extract the number of elements by the length of the 
     # element list
     
-    num_elem = len(elem)
-    # print(num_elem)
-    
-    # next, for each element of S, we need to find the 
-    # Stiffness by adding all matching dofs from the
-    # individual stiffness matricies.
-    
-    # First, make lookups of the dof for each elem.
-    
-    # for m in range(num_elem):
-    #     i = elem[m,0] # first node idx of the element (start)
-    #     j = elem[m,1] # end node idx of the element
+    for m in range(len(elem)):
         
-    #     # determine the dof list idxs for each member
-    #     dof_ix = 2*i
-    #     dof_iy = 2*i + 1
-    #     dof_jx = 2*j
-    #     dof_jy = 2*j + 1
+        i = elem[m,0] # first node idx of the element (start)
+        j = elem[m,1] # end node idx of the element
         
-    #     member_dofs = [dof_ix, dof_iy, dof jx, dof_jy]
+        K = K_members[m] # collect the member's Stiffness matrix
         
-    #     # Assemble S
+        # determine the dof list idxs for each member
+        dof_ix = 2*i 
+        # corresponds to the 0th idx in K
+        dof_iy = 2*i + 1
+        # corresponds to the 1st idx in K
+        dof_jx = 2*j
+        # corresponds to the 2nd idx in K
+        dof_jy = 2*j + 1
+        # corresponds to the 3rd idx in K
+        
+        member_dofs = [dof_ix, dof_iy, dof_jx, dof_jy]
+        
+        # our approach will be to add each member matrix into the main
+        # stiffness matrix
+        
+        # h and k take on the idx of K, and we collect the idxs of
+        # S from the member_dofs list
+        for h in range(4):
+            for k in range(4):
+                Sy = member_dofs[h]
+                Sx = member_dofs[k]
+                
+                S[Sy][Sx] += K[h][k]
+                
+    # now we have a Full S stiffness matrix
+    # print(S)
     
-    for Sx in range(ndof):
-        for Sy in range(ndof):
-            # Sx, Sy define the dof location that we need to sum.
-            # we will iterate all the elements and find
-            pass
-        
-#assemble_and_partition(K, restr, elem)
+    # next we need to remove unrestrained DOFs to get S_ff
+    # first copy S into S_ff and S_rf
+    
+
+    free_dof_idxs, restr_dof_idxs = get_free_and_restr_idxs(restrained_dofs)
+    #delete restrained rows leaving free
+    temp_arr = np.delete(S, restr_dof_idxs, axis=0) 
+    #delete restrained cols leaving free
+    S_ff = np.delete(temp_arr, restr_dof_idxs, axis=1) 
+    
+    #delete free rows leaving restr
+    temp_arr_2 = np.delete(S, free_dof_idxs, axis=0) 
+    #delete restrained cols leaving free
+    S_rf = np.delete(temp_arr_2, restr_dof_idxs, axis=1) 
+
+    # we now have S, S_ff, and S_rf
+    return S, S_ff, S_rf
+
+    
+S, S_ff, S_rf = assemble_and_partition(K, restr, elem)
+
+
+def get_free_loads(P,restrained_dofs):
+    free_idxs, restr_idxs = get_free_and_restr_idxs(restrained_dofs)
+    return get_subvector(P, free_idxs)
+
+P_f = get_free_loads(app_loads, restr)
+    
+def get_displacements(S_ff,P_f): 
+    S_ff_inv = np.linalg.inv(S_ff)
+    return S_ff_inv @ P_f
+
+d_f = get_displacements(S_ff,P_f)
+
+def get_support_reactions(S_rf,d):
+    return S_rf @ d
+
+P_r = get_support_reactions(S_rf, d_f)
+
+# d_f: the free-dof displacement vector. Gives a shape (ndof,1) numpy array 
+# that is the displacements.
+def assemble_full_displacement_vector(d_f,restrained_dofs):
+    free_idxs, restr_idxs = get_free_and_restr_idxs(restrained_dofs)
+    v = np.zeros((len(restrained_dofs),1))
+    free_dof_cnt = 0
+    for free in free_idxs:
+        v[free,0] = d_f[free_dof_cnt]
+        free_dof_cnt += 1 
+    return v
+
+# P_f: Free-dof loading vector
+# P_r: restrained dof loading vector
+# Gives a shape (ndof,1) numpy array of loads
+def assemble_full_load_vector(P_f, P_r, restrained_dofs):
+    free_idxs, restr_idxs = get_free_and_restr_idxs(restrained_dofs)
+    v = np.zeros((len(restrained_dofs),1))
+    dof_cnt = 0
+    free_dof_cnt = 0 
+    restr_dof_cnt = 0
+    for dof_row in restrained_dofs:
+        is_free = (dof_row[0] == 0)
+        if is_free:
+            v[dof_cnt][0] = P_f[free_dof_cnt]
+            free_dof_cnt += 1
+        else:
+            v[dof_cnt][0] = P_r[restr_dof_cnt]
+            restr_dof_cnt += 1
+        dof_cnt += 1
+    return v
+    
+    
+
+displacements = assemble_full_displacement_vector(d_f, restr)
+loads = assemble_full_load_vector(P_f, P_r, restr)
+
+print("displacements = ")
+print(displacements)
+
+print("loads = ")
+print(loads)
+
+
+#def get_axial_force(nodes,elem,disp)
