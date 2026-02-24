@@ -31,235 +31,10 @@ SOFTWARE.
 
 
 """
-
 import numpy as np
 
-xgrid = 288
-ygrid = 216
-    
-
-# define nodes in dict form
-nodeList = []
 
 
-# x: x (grid location if use_grid)
-# y: y (grid loaction if use_grid)
-# restx/y: restrained on x/y = 0 (false), = 1 (true)
-# loadx/y: load in GCS in kips
-
-def addnode(x,y,label,restx=0,resty=0,loadx=0,loady=0,use_grid=True):
-    if use_grid:
-        x *= xgrid
-        y *= ygrid
-    idx0 = len(nodeList)
-    nodeList.append({
-        "x":x,
-        "y":y,
-        "idx0":idx0,
-        "label":label,
-        "restx":restx,
-        "resty":resty,
-        "loadx":loadx,
-        "loady":loady
-        })
-
-
-def findNodeIdxByLabel(label):
-    for nodeData in nodeList:
-        if nodeData["label"] == label:
-            return nodeData["idx0"]
-
-#--------------
-# specify nodes
-#--------------
-#1
-addnode(x=0,y=0,label="node1",restx=1,resty=1,loadx=0,loady=0,use_grid=True)
-#2
-addnode(x=1,y=0,label="node2",loady=-75)
-#3
-addnode(x=2,y=0,label="node3",resty=1)
-addnode(x=3,y=0,label="node4",resty=1)
-addnode(x=1,y=1,label="node5",loadx=25)
-addnode(x=2,y=1,label="node6",loady=60)
-
-
-nodes = np.array([[nodeList[idx]["x"], nodeList[idx]["y"]] 
-                  for idx in range(len(nodeList))],dtype=float)
-print("nodes = ")
-print(nodes)
-
-
-
-
-# returns a restr and applied loads matrix where the order is 
-# [[x1][y1][x2][y2][x3]...] ordering the dof by node each getting 2 idxs
-
-def parseNodesIntoDOFList(nodeList):
-    restr = np.zeros((len(nodeList)*2,1),dtype=int)
-    app_loads = np.zeros((len(nodeList)*2,1),dtype=float)
-    
-    idx = 0
-    for nodeDict in nodeList:
-        
-        restr[idx*2] = nodeDict["restx"]
-        restr[idx*2+1] = nodeDict["resty"]
-        app_loads[idx*2] = nodeDict["loadx"]
-        app_loads[idx*2+1] = nodeDict["loady"]
-        
-        idx += 1
-        
-    return restr, app_loads
-
-restr, app_loads = parseNodesIntoDOFList(nodeList)
-
-print("restr = ")
-print(restr)
-print("app_loads = ")
-print(app_loads)
-
-
-
-# Materials
-materialDict = {
-    0:{"name": "steel", # Material string, idx 1
-       "youngMod": 29000 # E in [ksi]
-       },
-    1:{"name": "aluminum", # Material string, idx 0
-       "youngMod": 10000 # E in [ksi]
-       },
-}
-
-def getMaterialByName(name):
-    for materialData in materialDict.values():
-        if materialData["name"] == name:
-            return materialData
-
-def getMaterialEByName(name):
-    matrl = getMaterialByName(name)
-    return matrl["youngMod"]
-
-elemList = []
-
-# nodeStart if string, node label, if int, node idx0 for the start node
-# nodeEnd   if string, node label, if int, node idx0 for the end   node
-# area      cross section area in in^2
-# Material  material name
-
-def add_elem(nodeStart,nodeEnd,label,area=1,materialname="steel"):
-
-    snodeidx = 0
-    if isinstance(nodeStart, str):
-        snodeidx = findNodeIdxByLabel(nodeStart)
-    else:
-        snodeidx = nodeStart
-        
-    enodeidx = 0
-    if isinstance(nodeEnd, str):
-        enodeidx = findNodeIdxByLabel(nodeEnd)
-    else:
-        enodeidx = nodeEnd
-            
-    idx0 = len(elemList)
-    
-    elemList.append({
-        "start":snodeidx,
-        "end":enodeidx,
-        "label":label,
-        "idx0":idx0,
-        "area":area,
-        "material_name":materialname
-    })
-    
-
-#--------------
-# specify elements
-#--------------
-
-add_elem(nodeStart      = "node1",
-         nodeEnd        = "node2",
-         label          = "elem1",
-         area           = 8, #in^2
-         materialname   = "steel")
-
-add_elem(nodeStart      = "node2",
-         nodeEnd        = "node3",
-         label          = "elem2",
-         area           = 8,
-         materialname   = "steel")
-
-add_elem(nodeStart      = "node3",
-         nodeEnd        = "node4",
-         label          = "elem3",
-         area           = 16,
-         materialname   = "aluminum")
-
-add_elem(nodeStart      = "node5",
-         nodeEnd        = "node6",
-         label          = "elem4",
-         area           = 8,
-         materialname   = "steel")
-
-add_elem(nodeStart      = "node2",
-         nodeEnd        = "node5",
-         label          = "elem5",
-         area           = 8,
-         materialname   = "steel")
-
-add_elem(nodeStart      = "node3",
-         nodeEnd        = "node6",
-         label          = "elem6",
-         area           = 8,
-         materialname   = "steel")
-
-add_elem(nodeStart      = "node1",
-         nodeEnd        = "node5",
-         label          = "elem7",
-         area           = 12,
-         materialname   = "steel")
-
-add_elem(nodeStart      = "node2",
-         nodeEnd        = "node6",
-         label          = "elem8",
-         area           = 12,
-         materialname   = "steel")
-
-add_elem(nodeStart      = "node3",
-         nodeEnd        = "node5",
-         label          = "elem9",
-         area           = 12,
-         materialname   = "steel")
-
-add_elem(nodeStart      = "node4",
-         nodeEnd        = "node6",
-         label          = "elem10",
-         area           = 16,
-         materialname   = "aluminum")
-
-elem = np.array([[elemData["start"],elemData["end"]] for elemData in 
-                 elemList],dtype=int)
-elast = np.array([[getMaterialEByName(elemData["material_name"])] 
-                  for elemData in elemList])
-areas = np.array([[elemData["area"]] for elemData in elemList])
-
-print("elem = ")
-print(elem)
-
-
-print("elast = ")
-print(elast)
-
-
-# Areas
-
-# def get_areas(arealist):
-#     return np.array([[arealist[idx]] for idx in range(len(arealist))])
-
-# areas = get_areas([8,8,16,8,8,8,12,12,12,16]) # areas per bar in [in^2]
-
-print("areas = ")
-print(areas)
-
-        
 def element_global_stiffness(nodes, elem, elast, areas):
 
     # a) determine the num elemes in the structure
@@ -307,27 +82,11 @@ def element_global_stiffness(nodes, elem, elast, areas):
         
         # we now have a list of member stiffness matricies K in 
         # global coords. Next, we must assemble the final global
-        # stiffness matrix.
-        
-        
-        
+        # stiffness matrix (see assemble_and_partition)
+
     return K
 
-K = element_global_stiffness(nodes, elem, elast, areas)
 
-
-
-print("K(1) = ")
-print(K[0])
-print("K(5) = ")
-print(K[4])
-print("K(10) = ")
-print(K[9])
-
-
-
-    
-            
 def is_restricted(dof_idx, restrained_dof):
     return (restrained_dof[0][dof_idx] == 1)
 
@@ -433,26 +192,18 @@ def assemble_and_partition(K_members, restrained_dofs, elem):
     # we now have S, S_ff, and S_rf
     return S, S_ff, S_rf
 
-    
-S, S_ff, S_rf = assemble_and_partition(K, restr, elem)
-
 
 def get_free_loads(P,restrained_dofs):
     free_idxs, restr_idxs = get_free_and_restr_idxs(restrained_dofs)
     return get_subvector(P, free_idxs)
 
-P_f = get_free_loads(app_loads, restr)
-    
+
 def get_displacements(S_ff,P_f): 
     S_ff_inv = np.linalg.inv(S_ff)
     return S_ff_inv @ P_f
 
-d_f = get_displacements(S_ff,P_f)
-
 def get_support_reactions(S_rf,d):
     return S_rf @ d
-
-P_r = get_support_reactions(S_rf, d_f)
 
 # d_f: the free-dof displacement vector. Gives a shape (ndof,1) numpy array 
 # that is the displacements.
@@ -485,16 +236,330 @@ def assemble_full_load_vector(P_f, P_r, restrained_dofs):
         dof_cnt += 1
     return v
     
+
+def analyze_model(nodes, elem, elast, areas, restr, app_loads, debug=False):
+    if debug:
+        print("nodes= ")
+        print(nodes)
+        print("")
+        print("elem= ")
+        print(elem)
+        print("")
+        print("elast= ")
+        print(elast)
+        print("")
+        print("areas= ")
+        print(areas)
+        print("")
+        print("restr= ")
+        print(restr)
+        print("")
+        print("app_loads= ")
+        print(app_loads)
+        
+    K = element_global_stiffness(nodes, elem, elast, areas)
+
+    if debug:
+        print("K(1) = ")
+        print(K[0])
+        print("K(5) = ")
+        print(K[4])
+        print("K(10) = ")
+        print(K[9])
+        
+    S, S_ff, S_rf = assemble_and_partition(K, restr, elem)
+
+    if debug:
+        print("")
+        print("S= ")
+        print(S)
+        print("")
+        print("S_ff= ")
+        print(S_ff)
+        print("")
+        print("S_rf= ")
+        print(S_rf)
+        
+    P_f = get_free_loads(app_loads, restr)
+
+    if debug:
+        print("")
+        print("P_f= ")
+        print(P_f)
+        
+    d_f = get_displacements(S_ff,P_f)
     
+    
+    if debug:
+        print("")
+        print("d_f= ")
+        print(d_f)
+        
+    P_r = get_support_reactions(S_rf, d_f)
 
-displacements = assemble_full_displacement_vector(d_f, restr)
-loads = assemble_full_load_vector(P_f, P_r, restr)
+    if debug:
+        print("")
+        print("P_r= ")
+        print(d_f)
+    
+    displacements = assemble_full_displacement_vector(d_f, restr)
+    forces = assemble_full_load_vector(P_f, P_r, restr)
 
-print("displacements = ")
-print(displacements)
+    if debug:
+        print("displacements = ")
+        print(displacements)
+    
+        print("forces = ")
+        print(forces)
+    
+    return displacements, forces
+        
+    
+        
 
-print("loads = ")
-print(loads)
+class TrussModel2D:
+    """
+    Human-readable model state class.
+    Stores Human-readable model data, provides methods
+    to build the model, and provides a method to solve.
+    
+    usage:
+        m = TrussModel2D()
+        m.set_xgrid(xgrid_spacing)
+        m.set_ygrid(ygrid_spacing)
+        m.add_node(x=0,y=0,             # the coordinates of the node in GCS 
+                                        # or grid coords
+                                        # depending on use_grid
+                   label="node1",       # Human-readable node name
+                   restx=1,resty=1,     # restraints: 1 = restrained, 0 = free
+                   loadx=25,loady=30,   # applied loading
+                   use_grid=True        # whether to use grid for x,y
+                   )
+        # (add more nodes)
+        
+        m.add_material("steel", # human-readable material name
+                       29000    # E, youngs modulus
+                       )
+
+        # (add more materials)
+        
+        m.add_elem(nodeStart      = "node1", # label of element start node
+                  nodeEnd        = "node2",  # label of element end node
+                  label          = "elem1",  # label of element
+                  area           = 8, #in^2  # cross-sectional area of element
+                  materialname   = "steel"   # name of element's material
+                  )
+        displacements, forces = m.run_analysis(
+            debug=True   # whether to print out all intermediate 
+                         # calculations
+                       )
 
 
-#def get_axial_force(nodes,elem,disp)
+    """
+    def __init__(self, xgrid=1, ygrid=1):
+        self.xgrid = float(xgrid)
+        self.ygrid = float(ygrid)
+        self.nodeList = []
+        self.elemList = []
+        self.matrList = []
+        self.add_material("default", 29000) # a default steel material
+    
+    def set_xgrid(self, xgrid):
+        self.xgrid = xgrid
+    def set_ygrid(self, ygrid):
+        self.ygrid = ygrid
+    def add_node(self, x, y, label, restx=0, resty=0, loadx=0, loady=0, 
+                 use_grid=True):
+        if use_grid:
+            x *= self.xgrid
+            y *= self.ygrid
+        idx0 = len(self.nodeList)
+        self.nodeList.append({
+            "x":x,
+            "y":y,
+            "idx0":idx0,
+            "label":label,
+            "restx":restx,
+            "resty":resty,
+            "loadx":loadx,
+            "loady":loady
+            })
+    def add_material(self,name,youngMod):
+        self.matrList.append({
+            "name": name, # Material string, idx 1
+            "youngMod": youngMod # E in [ksi]
+            })
+    def findNodeIdxByLabel(self, label):
+        for nodeData in self.nodeList:
+            if nodeData["label"] == label:
+                return nodeData["idx0"]
+    def add_elem(self,nodeStart,nodeEnd,label,area=1,materialname="default"):
+        snodeidx = 0
+        if isinstance(nodeStart, str):
+            snodeidx = self.findNodeIdxByLabel(nodeStart)
+        else:
+            snodeidx = nodeStart
+            
+        enodeidx = 0
+        if isinstance(nodeEnd, str):
+            enodeidx = self.findNodeIdxByLabel(nodeEnd)
+        else:
+            enodeidx = nodeEnd
+                
+        idx0 = len(self.elemList)
+        
+        self.elemList.append({
+            "start":snodeidx,
+            "end":enodeidx,
+            "label":label,
+            "idx0":idx0,
+            "area":area,
+            "material_name":materialname
+        })
+    def parseNodesIntoDOFList(self):
+        restr = np.zeros((len(self.nodeList)*2,1),dtype=int)
+        app_loads = np.zeros((len(self.nodeList)*2,1),dtype=float)
+        
+        idx = 0
+        for nodeDict in self.nodeList:
+            
+            restr[idx*2] = nodeDict["restx"]
+            restr[idx*2+1] = nodeDict["resty"]
+            app_loads[idx*2] = nodeDict["loadx"]
+            app_loads[idx*2+1] = nodeDict["loady"]
+            
+            idx += 1
+            
+        return restr, app_loads
+
+    def getMaterialByName(self,name):
+        for materialData in self.matrList:
+            if materialData["name"] == name:
+                return materialData
+
+    def getMaterialEByName(self,name):
+        matrl = self.getMaterialByName(name)
+        return matrl["youngMod"]
+
+    def run_analysis(self,debug=False):
+        
+        nodes = np.array([[self.nodeList[idx]["x"], self.nodeList[idx]["y"]] 
+                          for idx in range(len(self.nodeList))],dtype=float)
+        
+        restr, app_loads = self.parseNodesIntoDOFList()
+        
+        elem = np.array([[elemData["start"],elemData["end"]] for elemData in 
+                         self.elemList],dtype=int)
+        elast = np.array([[self.getMaterialEByName(elemData["material_name"])] 
+                          for elemData in self.elemList])
+        areas = np.array([[elemData["area"]] for elemData in self.elemList])
+
+        displacements, forces = analyze_model(nodes, elem, 
+                                              elast, areas, 
+                                              restr, app_loads, 
+                                              debug)
+        return displacements, forces
+        
+def main():
+    m = TrussModel2D()
+    
+    #--------------
+    # specify grid
+    #--------------
+    m.set_xgrid(288)
+    m.set_ygrid(216)
+    
+    #--------------
+    # specify nodes
+    #--------------
+    
+    #1
+    m.add_node(x=0,y=0,label="node1",restx=1,resty=1,loadx=0,loady=0,use_grid=True)
+    #2
+    m.add_node(x=1,y=0,label="node2",loady=-75)
+    #3
+    m.add_node(x=2,y=0,label="node3",resty=1)
+    m.add_node(x=3,y=0,label="node4",resty=1)
+    m.add_node(x=1,y=1,label="node5",loadx=25)
+    m.add_node(x=2,y=1,label="node6",loady=60)
+    
+    #--------------
+    # Specify Materials
+    #--------------
+    
+    m.add_material("steel", 29000)
+    m.add_material("aluminum", 10000)
+
+        
+    #--------------
+    # specify elements
+    #--------------
+    
+    m.add_elem(nodeStart      = "node1",
+             nodeEnd        = "node2",
+             label          = "elem1",
+             area           = 8, #in^2
+             materialname   = "steel")
+    
+    m.add_elem(nodeStart      = "node2",
+             nodeEnd        = "node3",
+             label          = "elem2",
+             area           = 8,
+             materialname   = "steel")
+    
+    m.add_elem(nodeStart      = "node3",
+             nodeEnd        = "node4",
+             label          = "elem3",
+             area           = 16,
+             materialname   = "aluminum")
+    
+    m.add_elem(nodeStart      = "node5",
+             nodeEnd        = "node6",
+             label          = "elem4",
+             area           = 8,
+             materialname   = "steel")
+    
+    m.add_elem(nodeStart      = "node2",
+             nodeEnd        = "node5",
+             label          = "elem5",
+             area           = 8,
+             materialname   = "steel")
+    
+    m.add_elem(nodeStart      = "node3",
+             nodeEnd        = "node6",
+             label          = "elem6",
+             area           = 8,
+             materialname   = "steel")
+    
+    m.add_elem(nodeStart      = "node1",
+             nodeEnd        = "node5",
+             label          = "elem7",
+             area           = 12,
+             materialname   = "steel")
+    
+    m.add_elem(nodeStart      = "node2",
+             nodeEnd        = "node6",
+             label          = "elem8",
+             area           = 12,
+             materialname   = "steel")
+    
+    m.add_elem(nodeStart      = "node3",
+             nodeEnd        = "node5",
+             label          = "elem9",
+             area           = 12,
+             materialname   = "steel")
+    
+    m.add_elem(nodeStart      = "node4",
+             nodeEnd        = "node6",
+             label          = "elem10",
+             area           = 16,
+             materialname   = "aluminum")
+    
+    m.run_analysis(debug=True)
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+    
