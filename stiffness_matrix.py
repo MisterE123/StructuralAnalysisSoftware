@@ -30,7 +30,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
+AI use: AI was used for minimal bug identification and organization suggestions
+Mostly as a glorified api lookup.
+
 """
+
 import numpy as np
 import math
 
@@ -39,13 +43,13 @@ def element_global_stiffness(nodes, elem, elast, areas):
     # a) determine the num elemes in the structure
 
     num_elem = elem.shape[0]
-    print("There are "+str(num_elem)+" bars")
+    # print("There are "+str(num_elem)+" bars")
+    
     K_list = [] # list of global stiffness matrs
+    
     T_list = []
 
     for m in range(num_elem):
-        
-
         
         start_node = elem[m,0]
         end_node = elem[m,1]
@@ -278,7 +282,7 @@ def convert_dof_v_to_np_node_v(dof_v):
 
     """
     num_nodes = int(len(dof_v)/2)
-    print(num_nodes)
+    # print(num_nodes)
     node_val_list = np.zeros((num_nodes,2))
     dof_cnt = 0
     for node_idx in range(num_nodes):
@@ -428,7 +432,7 @@ def get_normal_force_list(u_vector, elast, areas, nodes, elem):
     # calculate the Normal forces
     N_vector = np.zeros((u_vect_len,1))
     for idx in range(u_vect_len):
-        u = u_vector[idx]
+        u = np.asarray(u_vector[idx])
         E = elast[idx]
         A = areas[idx]
         L = L_list[idx]
@@ -685,7 +689,18 @@ class TrussModel2D:
                                               elast, areas, 
                                               restr, app_loads, 
                                               debug)
-        return displacements_by_node, forces_by_node, normal_forces
+        ret = {"nodes":nodes,
+               "restr":restr,
+               "app_loads":app_loads,
+               "elem":elem,
+               "elast":elast,
+               "areas":areas,
+               "displacements_by_node":displacements_by_node,
+               "forces_by_node":forces_by_node,
+               "normal_forces":normal_forces
+               }
+        
+        return ret
    
 
      
@@ -793,7 +808,12 @@ def main():
              area           = 16,
              materialname   = "aluminum")
     
-    m.run_analysis(debug=True)
+    ret = m.run_analysis(debug=False)
+
+    for key in ret:
+        val = ret[key]
+        print(key,"  : ")
+        print(val)
 
     return 0
 
