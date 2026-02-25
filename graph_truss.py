@@ -53,6 +53,49 @@ def plot_deformed_truss(ret, exaggeration=1.0):
     plt.scatter(nodes[:, 0], nodes[:, 1], color='grey', zorder=3, s=20)
     plt.scatter(deformed_nodes[:, 0], deformed_nodes[:, 1], color='#D9534F', zorder=4, s=30)
 
+    # Plot Support Conditions as blue arrows
+    restr = ret.get('restr')
+    if restr is not None:
+        restr_x = []
+        restr_y = []
+        restr_u = []
+        restr_v = []
+        for i in range(len(nodes)):
+            rx = restr[i*2][0]
+            ry = restr[i*2+1][0]
+            if rx == 1:
+                restr_x.append(nodes[i][0])
+                restr_y.append(nodes[i][1])
+                restr_u.append(-1)
+                restr_v.append(0)
+            if ry == 1:
+                restr_x.append(nodes[i][0])
+                restr_y.append(nodes[i][1])
+                restr_u.append(0)
+                restr_v.append(-1)
+        if restr_x:
+            # We use pivot='tip' so the arrow points TO the node
+            plt.quiver(restr_x, restr_y, restr_u, restr_v, color='blue', pivot='tip', zorder=5, label='Supports')
+
+    # Plot Applied Loads as green arrows
+    app_loads = ret.get('app_loads')
+    if app_loads is not None:
+        load_x = []
+        load_y = []
+        load_u = []
+        load_v = []
+        for i in range(len(nodes)):
+            lx = app_loads[i*2][0]
+            ly = app_loads[i*2+1][0]
+            if lx != 0 or ly != 0:
+                load_x.append(nodes[i][0])
+                load_y.append(nodes[i][1])
+                load_u.append(lx)
+                load_v.append(ly)
+        if load_x:
+            # Arrow points in the direction of the load, starting at the node
+            plt.quiver(load_x, load_y, load_u, load_v, color='green', zorder=6, label='Applied Loads')
+
     # Format the plot
     plt.xlabel('X')
     plt.ylabel('Y')
