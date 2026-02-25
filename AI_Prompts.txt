@@ -242,3 +242,37 @@ Prompt 6:
     Accepted: 
 
             fixed issue with extracting values from arrays
+
+Prompt 7: 
+    Purpose: Add support conditions
+    Prompt: 
+
+            show loading and support conditions as vector arrows on the original shape in the plot.
+
+    Response: 
+
+            I have updated 
+
+            graph_truss.py
+            to plot the applied loads and the support conditions directly on the truss shape using plt.quiver arrows!
+
+            Support Conditions are shown as blue arrows pointing towards the node in the restricted direction (X and/or Y).
+            Applied Loads are represented as green arrows originating from the node, pointing in the direction of the load vector.
+            Since we are extracting the 
+
+            restr
+            and app_loads definitions straight from the ret dictionary, the arrows should dynamically match whatever nodes and load sizes you enter.
+
+            Try re-running your code:
+
+            bash
+            python .\stiffness_matrix.py
+            And check out the generated graph! Let me know if you would like to adjust the colors, lengths, or thicknesses of the arrows.
+
+    Accepted:
+
+            Code changes at commit a39bcae9e3e750a19d3737434805f7afb7f541bc
+
+    Verification:
+            Ran code, arrows appear on the plot as expected.
+
