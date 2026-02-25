@@ -32,8 +32,7 @@ SOFTWARE.
 
 """
 import numpy as np
-
-
+import math
 
 def element_global_stiffness(nodes, elem, elast, areas):
 
@@ -41,7 +40,8 @@ def element_global_stiffness(nodes, elem, elast, areas):
 
     num_elem = elem.shape[0]
     print("There are "+str(num_elem)+" bars")
-    K = [] # list of global stiffness matrs
+    K_list = [] # list of global stiffness matrs
+    T_list = []
 
     for m in range(num_elem):
         
@@ -78,13 +78,14 @@ def element_global_stiffness(nodes, elem, elast, areas):
         
         K_m = TT @ k_local @ T #local transformed to global
         
-        K.append(K_m)
+        K_list.append(K_m)
+        T_list.append(T)
         
         # we now have a list of member stiffness matricies K in 
         # global coords. Next, we must assemble the final global
         # stiffness matrix (see assemble_and_partition)
 
-    return K
+    return K_list, T_list
 
 
 def is_restricted(dof_idx, restrained_dof):
@@ -129,9 +130,9 @@ def assemble_and_partition(K_members, restrained_dofs, elem):
     
     ndof = 2* num_nodes
     
-    num_unrestr = count_unrestrained_dof(restrained_dofs)
+    # num_unrestr = count_unrestrained_dof(restrained_dofs)
 
-    print("Sanity check: ", ndof == len(restrained_dofs))
+    # print("Sanity check: ", ndof == len(restrained_dofs))
 
     # make ndof x ndof matrix for the main stiffness matrix
     
@@ -208,18 +209,46 @@ def get_support_reactions(S_rf,d):
 # d_f: the free-dof displacement vector. Gives a shape (ndof,1) numpy array 
 # that is the displacements.
 def assemble_full_displacement_vector(d_f,restrained_dofs):
+    """
+    
+
+    Parameters
+    ----------
+    d_f : the free-dof displacement vector 
+            Gives a shape (ndof,1) numpy array.
+    restrained_dofs : VECTOR OF RESTRAINED DOF.
+
+    Returns
+    -------
+    v : DOF-BASED (ndof,1) NUMPY ARRAY OF DISPLACEMENTS.
+
+    """
     free_idxs, restr_idxs = get_free_and_restr_idxs(restrained_dofs)
     v = np.zeros((len(restrained_dofs),1))
     free_dof_cnt = 0
     for free in free_idxs:
-        v[free,0] = d_f[free_dof_cnt]
+        v[free][0] = d_f[free_dof_cnt][0]
         free_dof_cnt += 1 
     return v
 
-# P_f: Free-dof loading vector
-# P_r: restrained dof loading vector
-# Gives a shape (ndof,1) numpy array of loads
+
+
 def assemble_full_load_vector(P_f, P_r, restrained_dofs):
+    """
+    
+
+    Parameters
+    ----------
+    P_f : Free-dof loading vector.
+    P_r : restrained dof loading vector.
+    restrained_dofs : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    v : a DOF-BASED (ndof,1) numpy array of loads.
+
+    """
     free_idxs, restr_idxs = get_free_and_restr_idxs(restrained_dofs)
     v = np.zeros((len(restrained_dofs),1))
     dof_cnt = 0
@@ -228,14 +257,184 @@ def assemble_full_load_vector(P_f, P_r, restrained_dofs):
     for dof_row in restrained_dofs:
         is_free = (dof_row[0] == 0)
         if is_free:
-            v[dof_cnt][0] = P_f[free_dof_cnt]
+            v[dof_cnt][0] = P_f[free_dof_cnt][0]
             free_dof_cnt += 1
         else:
-            v[dof_cnt][0] = P_r[restr_dof_cnt]
+            v[dof_cnt][0] = P_r[restr_dof_cnt][0]
             restr_dof_cnt += 1
         dof_cnt += 1
     return v
+
+def convert_dof_v_to_np_node_v(dof_v):
+    """
     
+    Parameters
+    ----------
+    dof_v : AN Nx1 DOF-BASED NP ARRAY VECTOR.
+
+    Returns
+    -------
+    node_val_list : A (N/2)x2 NP ARRAY OF NODE-BASED VALUES.
+
+    """
+    num_nodes = int(len(dof_v)/2)
+    print(num_nodes)
+    node_val_list = np.zeros((num_nodes,2))
+    dof_cnt = 0
+    for node_idx in range(num_nodes):
+        node_val_list[node_idx][0] = dof_v[dof_cnt][0]
+        dof_cnt += 1
+        node_val_list[node_idx][1] = dof_v[dof_cnt][0]
+        dof_cnt += 1
+    return node_val_list
+
+
+def get_global_displacement_vectors_by_elem(elem,full_displacement_vector):
+    """
+    returns A per-element list of global-cs displacement vectors 
+    [[[s_x],[s_y],[e_x],[e_y]],...]
+
+    Parameters
+    ----------
+    elem : element list.
+    full_displacement_vector : displacements by DOF
+
+    Returns
+    -------
+    v_vector : list of global end deformations by element.
+    [[[s_x], # elem 1 displacement vector
+      [s_y],
+      [e_x],
+      [e_y]],
+     ... # more elem displacement vectors
+     ]
+    
+    """
+    v_vector = np.zeros((elem.shape[0],4,1))
+    
+    np_displacements = convert_dof_v_to_np_node_v(full_displacement_vector)
+    
+    
+    for elem_cnt in range(elem.shape[0]):
+        element = elem[elem_cnt]
+        elem_n1 = element[0]
+        elem_n2 = element[1]
+        
+        n1_dx = np_displacements[elem_n1][0]
+        n1_dy = np_displacements[elem_n1][1]
+        n2_dx = np_displacements[elem_n2][0]
+        n2_dy = np_displacements[elem_n2][1]
+        
+        v_vector[elem_cnt][0][0] = n1_dx
+        v_vector[elem_cnt][1][0] = n1_dy
+        v_vector[elem_cnt][2][0] = n2_dx
+        v_vector[elem_cnt][3][0] = n2_dy
+        
+    # print(v_vector)
+
+    return v_vector
+
+def get_local_deformations_by_elem(v_vector, T_list):
+    """
+    
+    Parameters
+    ----------
+    v_vector : Nx4x1 shape np array of N-elem based deformations.
+    [[[s_x], # elem 1 displacement vector
+      [s_y],
+      [e_x],
+      [e_y]],
+     ... # more elem displacement vectors
+     ]
+    T_list : list of local transformation matricies per element.
+    [[ 4 x 4 np matrix ], elem 1 transform matrix
+     [ 4 x 4 np matrix ], # more transform matricies
+    ]
+
+    Raises
+    ------
+    IndexError
+        If the number of transformations and element displacements passed are
+        unequal.
+
+    Returns
+    -------
+    u_vector : an Nx4x1 shape np vector of per-elem local displacement vectors
+    [[[s_x], # elem 1 displacement vector
+      [s_y],
+      [e_x],
+      [e_y]],
+     ... # more elem displacement vectors
+     ].
+
+    """
+    
+    # sanity check
+    if not v_vector.shape[0] == len(T_list):
+        raise IndexError()
+    
+    u_vector = np.zeros((v_vector.shape[0],4,1))
+    
+    for idx in range(v_vector.shape[0]):
+        
+        u_vector[idx] = ((T_list[idx])@(v_vector[idx]))
+    
+    return u_vector
+
+
+def get_normal_force(u,E,A,L):
+    """
+    
+    Parameters
+    ----------
+    u : elem-based local deformation vector.
+    
+    E : Youngs mod.
+    
+    A : cross-sectional area.
+    
+    L : Member original len.
+
+    Returns
+    -------
+    N : Normal Force.
+
+    """
+    
+    N = (u[2]-u[0])*E*A/L
+    
+    return N
+
+def get_normal_force_list(u_vector, elast, areas, nodes, elem):
+    
+    L_list = []
+    u_vect_len = u_vector.shape[0]
+    
+    for idx in range(u_vect_len):
+        # get the original length
+        element = elem[idx]
+        elem_n1 = element[0]
+        elem_n2 = element[1]
+        
+        n1x = nodes[elem_n1][0]
+        n1y = nodes[elem_n1][1]
+        
+        n2x = nodes[elem_n2][0]
+        n2y = nodes[elem_n2][1]
+        
+        L = math.sqrt((n2x-n1x)*(n2x-n1x)+(n2y-n1y)*(n2y-n1y))
+        L_list.append(L)
+    
+    # calculate the Normal forces
+    N_vector = np.zeros((u_vect_len,1))
+    for idx in range(u_vect_len):
+        u = u_vector[idx]
+        E = elast[idx]
+        A = areas[idx]
+        L = L_list[idx]
+        
+        N_vector[idx][0] = get_normal_force(u, E, A, L)
+    return N_vector
 
 def analyze_model(nodes, elem, elast, areas, restr, app_loads, debug=False):
     if debug:
@@ -257,17 +456,19 @@ def analyze_model(nodes, elem, elast, areas, restr, app_loads, debug=False):
         print("app_loads= ")
         print(app_loads)
         
-    K = element_global_stiffness(nodes, elem, elast, areas)
-
+    K_list, T_list = element_global_stiffness(nodes, elem, elast, areas)
+    
     if debug:
+        print("T_list = ")
+        print(T_list)
         print("K(1) = ")
-        print(K[0])
+        print(K_list[0])
         print("K(5) = ")
-        print(K[4])
+        print(K_list[4])
         print("K(10) = ")
-        print(K[9])
+        print(K_list[9])
         
-    S, S_ff, S_rf = assemble_and_partition(K, restr, elem)
+    S, S_ff, S_rf = assemble_and_partition(K_list, restr, elem)
 
     if debug:
         print("")
@@ -304,6 +505,9 @@ def analyze_model(nodes, elem, elast, areas, restr, app_loads, debug=False):
     
     displacements = assemble_full_displacement_vector(d_f, restr)
     forces = assemble_full_load_vector(P_f, P_r, restr)
+    
+    displacements_by_node = convert_dof_v_to_np_node_v(displacements)
+    forces_by_node = convert_dof_v_to_np_node_v(forces)
 
     if debug:
         print("displacements = ")
@@ -312,7 +516,31 @@ def analyze_model(nodes, elem, elast, areas, restr, app_loads, debug=False):
         print("forces = ")
         print(forces)
     
-    return displacements, forces
+    # a list of node displacement lists [[dx,dy]...]
+    per_elem_disp_list = get_global_displacement_vectors_by_elem(elem,
+                                                                 displacements)
+    
+    if debug:
+        print("per-elem global displacements = ")
+        print(per_elem_disp_list)
+    
+    per_elem_local_disp_list = get_local_deformations_by_elem(per_elem_disp_list,
+                                                              T_list)
+    
+    if debug:
+        print("per-elem local displacements = ")
+        print(per_elem_local_disp_list)
+        
+    per_elem_normal_force = get_normal_force_list(per_elem_local_disp_list, 
+                                                  elast, 
+                                                  areas, 
+                                                  nodes, 
+                                                  elem)
+    if debug:
+        print("per-elem Normal forces = ")
+        print(per_elem_normal_force)
+    
+    return displacements_by_node, forces_by_node, per_elem_normal_force
         
     
         
@@ -353,8 +581,6 @@ class TrussModel2D:
             debug=True   # whether to print out all intermediate 
                          # calculations
                        )
-
-
     """
     def __init__(self, xgrid=1, ygrid=1):
         self.xgrid = float(xgrid)
@@ -454,13 +680,25 @@ class TrussModel2D:
                           for elemData in self.elemList])
         areas = np.array([[elemData["area"]] for elemData in self.elemList])
 
-        displacements, forces = analyze_model(nodes, elem, 
+        displacements_by_node, forces_by_node, normal_forces = analyze_model(
+                                              nodes, elem, 
                                               elast, areas, 
                                               restr, app_loads, 
                                               debug)
-        return displacements, forces
-        
+        return displacements_by_node, forces_by_node, normal_forces
+   
+
+     
 def main():
+    
+    """
+        Running the file by itself will run the following code
+        
+        This solves the example truss
+        
+        Passing debug = True like we do will print all intermediate data
+        
+    """
     m = TrussModel2D()
     
     #--------------
@@ -495,7 +733,7 @@ def main():
     # specify elements
     #--------------
     
-    m.add_elem(nodeStart      = "node1",
+    m.add_elem(nodeStart    = "node1",
              nodeEnd        = "node2",
              label          = "elem1",
              area           = 8, #in^2
@@ -507,49 +745,49 @@ def main():
              area           = 8,
              materialname   = "steel")
     
-    m.add_elem(nodeStart      = "node3",
+    m.add_elem(nodeStart    = "node3",
              nodeEnd        = "node4",
              label          = "elem3",
              area           = 16,
              materialname   = "aluminum")
     
-    m.add_elem(nodeStart      = "node5",
+    m.add_elem(nodeStart    = "node5",
              nodeEnd        = "node6",
              label          = "elem4",
              area           = 8,
              materialname   = "steel")
     
-    m.add_elem(nodeStart      = "node2",
+    m.add_elem(nodeStart    = "node2",
              nodeEnd        = "node5",
              label          = "elem5",
              area           = 8,
              materialname   = "steel")
     
-    m.add_elem(nodeStart      = "node3",
+    m.add_elem(nodeStart    = "node3",
              nodeEnd        = "node6",
              label          = "elem6",
              area           = 8,
              materialname   = "steel")
     
-    m.add_elem(nodeStart      = "node1",
+    m.add_elem(nodeStart    = "node1",
              nodeEnd        = "node5",
              label          = "elem7",
              area           = 12,
              materialname   = "steel")
     
-    m.add_elem(nodeStart      = "node2",
+    m.add_elem(nodeStart    = "node2",
              nodeEnd        = "node6",
              label          = "elem8",
              area           = 12,
              materialname   = "steel")
     
-    m.add_elem(nodeStart      = "node3",
+    m.add_elem(nodeStart    = "node3",
              nodeEnd        = "node5",
              label          = "elem9",
              area           = 12,
              materialname   = "steel")
     
-    m.add_elem(nodeStart      = "node4",
+    m.add_elem(nodeStart    = "node4",
              nodeEnd        = "node6",
              label          = "elem10",
              area           = 16,
