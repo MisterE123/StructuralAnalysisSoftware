@@ -70,10 +70,58 @@ Prompt 4:
 Prompt 5:
     Prompt:
 
-                make the GUI have a separate file for input and for output, this keeps the results code separate for easy inspection.
+            in a new file, create a single function that graphs the deformed shape of the truss using matplotlib. The function will accept the ret dict given by TrussModel2D.run_analysis()
+            and an optional exaggeration multiplier.
+            the main function of stiffness_matrix, which contains the example truss, will import the file you create and call the graphing function. I will add this call, you are only to touch the new file and give documentation.
 
-                Have an app.py that is the main skeleton and GUI state, have a file for each input tab,  and have a file for the output tab.
-
-                The output tab will show all inputs and outputs in table form and the GUI image with an exaggeration slider.
+            The original shape will be displayed in grey and the deformed shape in a soft red.
 
     Response: 
+
+            <implemented graph_truss.py>
+
+            I have created a new file named 
+
+            graph_truss.py
+            in your project folder. This file contains the 
+
+            plot_deformed_truss
+            function that takes the ret dictionary from TrussModel2D.run_analysis() and an optional exaggeration multiplier (which defaults to 1.0).
+
+            It plots the original shape of the truss in a dashed grey line and the deformed shape in a solid soft red line (#D9534F). I also included plt.axis('equal') so the structural geometry isn't skewed visually by differing axis scales.
+
+            Here is the function signature and documentation that I created for you to reference:
+
+            python
+            import matplotlib.pyplot as plt
+            def plot_deformed_truss(ret, exaggeration=1.0):
+                """
+                Graphs the original and deformed shapes of a 2D truss structure.
+                
+                Parameters
+                ----------
+                ret : dict
+                    The result dictionary returned by TrussModel2D.run_analysis().
+                    Expected to contain:
+                        - "nodes": Original node coordinates, shape (N, 2)
+                        - "elem": Element connectivity list of node indices, shape (E, 2)
+                        - "displacements_by_node": Node displacements, shape (N, 2)
+                exaggeration : float, optional
+                    A multiplier applied to the displacements to make them visually
+                    distinct. The default is 1.0.
+                """
+                ...
+            You can now import this into the 
+
+            stiffness_matrix.py
+            file to call it inside the 
+
+            main()
+            block like so:
+
+            python
+            from graph_truss import plot_deformed_truss
+            # Inside main()...
+            ret = m.run_analysis(debug=True)
+            plot_deformed_truss(ret, exaggeration=100.0) # Using 100x exaggeration
+            Let me know if there are any tweaks you'd like made or if I can do anything else!
