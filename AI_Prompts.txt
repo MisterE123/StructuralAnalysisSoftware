@@ -78,7 +78,7 @@ Prompt 5:
 
     Response: 
 
-            <implemented graph_truss.py>
+            <implemented graph_truss.py at git tag 6fcfb7bcd7a52bc7b7b91e813dc7d30a316f736c>
 
             I have created a new file named 
 
@@ -125,3 +125,120 @@ Prompt 5:
             ret = m.run_analysis(debug=True)
             plot_deformed_truss(ret, exaggeration=100.0) # Using 100x exaggeration
             Let me know if there are any tweaks you'd like made or if I can do anything else!
+
+    Accepted: 
+
+            Accepted code changes and suggested usage.
+
+Prompt 6:
+    Purpose: Fix errors
+    Prompt:
+
+            PS C:\Users\gbrru\OneDrive\Documents\College\Semester_Spring_2026\FEA\Assignments\WIP\StructuralAnalysisSoftware> python .\stiffness_matrix.py
+            TypeError: only 0-dimensional arrays can be converted to Python scalars
+
+            The above exception was the direct cause of the following exception:
+
+            Traceback (most recent call last):
+            File "C:\Users\gbrru\OneDrive\Documents\College\Semester_Spring_2026\FEA\Assignments\WIP\StructuralAnalysisSoftware\stiffness_matrix.py", line 825, in <module>
+                raise SystemExit(main())
+                                ~~~~^^
+            File "C:\Users\gbrru\OneDrive\Documents\College\Semester_Spring_2026\FEA\Assignments\WIP\StructuralAnalysisSoftware\stiffness_matrix.py", line 811, in main
+                ret = m.run_analysis(debug=False)
+            File "C:\Users\gbrru\OneDrive\Documents\College\Semester_Spring_2026\FEA\Assignments\WIP\StructuralAnalysisSoftware\stiffness_matrix.py", line 687, in run_analysis
+                displacements_by_node, forces_by_node, normal_forces = analyze_model(
+                                                                    ~~~~~~~~~~~~~^
+                                                    nodes, elem,
+                                                    ^^^^^^^^^^^^
+                                                    elast, areas,
+                                                    ^^^^^^^^^^^^^
+                                                    restr, app_loads,
+                                                    ^^^^^^^^^^^^^^^^^
+                                                    debug)
+                                                    ^^^^^^
+            File "C:\Users\gbrru\OneDrive\Documents\College\Semester_Spring_2026\FEA\Assignments\WIP\StructuralAnalysisSoftware\stiffness_matrix.py", line 538, in analyze_model
+                per_elem_normal_force = get_normal_force_list(per_elem_local_disp_list,
+                                                            elast,
+                                                            areas,
+                                                            nodes,
+                                                            elem)
+            File "C:\Users\gbrru\OneDrive\Documents\College\Semester_Spring_2026\FEA\Assignments\WIP\StructuralAnalysisSoftware\stiffness_matrix.py", line 440, in get_normal_force_list
+                N_vector[idx][0] = get_normal_force(u, E, A, L)
+                ~~~~~~~~~~~~~^^^
+            ValueError: setting an array element with a sequence.
+
+            What is causing this?
+
+            Do not edit, only describe the issue
+
+    Response:
+
+            The issue is caused by a dimensions mismatch where a 1D numpy array (a sequence of 1 element) is being assigned to a scalar slot in N_vector[idx][0], rather than a plain Python float.
+
+            Here is the breakdown of why this happens:
+
+            Dimensionality of Inputs: Back in 
+
+            run_analysis()
+            , elast and areas are created as 2D column arrays with shape 
+
+            (num_elem, 1)
+            .
+
+            python
+            elast = np.array([[self.getMaterialEByName(elemData["material_name"])] for elemData in self.elemList])
+            # elast[idx] returns an array like `[29000]`, not a scalar `29000`
+            Propagation of Arrays: In 
+
+            get_normal_force_list
+            , when you do:
+
+            python
+            E = elast[idx]
+            A = areas[idx]
+            E and A are both 1D arrays of shape 
+
+            (1,)
+            . Furthermore, u is of shape 
+
+            (4, 1)
+            , meaning u[0] and u[2] are also arrays of shape 
+
+            (1,)
+            .
+
+            The Calculation: Inside 
+
+            get_normal_force
+            , the calculation 
+
+            (u[2]-u[0])
+            E
+            A/L
+            multiplies these 
+
+            (1,)
+            arrays together. As a result, the returned N is also a 1D array like [550.2], not a single float 550.2.
+
+            The Assignment Error:
+
+            python
+            N_vector[idx][0] = get_normal_force(...)
+            N_vector[idx][0] represents a single scalar memory slot in the numpy array. Trying to stuff the 1D array [550.2] into that scalar slot triggers the ValueError: setting an array element with a sequence.
+
+            How it can be fixed: You need to extract the scalar values from these arrays before doing the math or before the assignment. For example, by extracting the [0] index of the arrays when defining E and A, and doing the same for u:
+
+            python
+            E = elast[idx][0]
+            A = areas[idx][0]
+            # And inside get_normal_force or when passing u:
+            u_val_2 = u[2][0]
+            u_val_0 = u[0][0]
+            Alternatively, just extracting the first element of the returned array during assignment works too:
+
+            python
+            N_vector[idx][0] = get_normal_force(u, E, A, L)[0]
+    
+    Accepted: 
+
+            fixed issue with extracting values from arrays

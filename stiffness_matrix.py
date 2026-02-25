@@ -391,7 +391,7 @@ def get_normal_force(u,E,A,L):
     
     Parameters
     ----------
-    u : elem-based local deformation vector.
+    u : 4x1 elem-based local deformation vector.
     
     E : Youngs mod.
     
@@ -405,7 +405,7 @@ def get_normal_force(u,E,A,L):
 
     """
     
-    N = (u[2]-u[0])*E*A/L
+    N = (u[2][0]-u[0][0])*E*A/L
     
     return N
 
@@ -433,8 +433,8 @@ def get_normal_force_list(u_vector, elast, areas, nodes, elem):
     N_vector = np.zeros((u_vect_len,1))
     for idx in range(u_vect_len):
         u = np.asarray(u_vector[idx])
-        E = elast[idx]
-        A = areas[idx]
+        E = elast[idx][0]
+        A = areas[idx][0]
         L = L_list[idx]
         
         N_vector[idx][0] = get_normal_force(u, E, A, L)
@@ -814,6 +814,9 @@ def main():
         val = ret[key]
         print(key,"  : ")
         print(val)
+
+    from graph_truss import plot_deformed_truss
+    plot_deformed_truss(ret, exaggeration=100) 
 
     return 0
 

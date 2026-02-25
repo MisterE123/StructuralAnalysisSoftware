@@ -25,17 +25,6 @@ def plot_deformed_truss(ret, exaggeration=1.0):
 
     plt.figure(figsize=(10, 6))
 
-    # Plot original truss shape (grey, dashed)
-    for i, element in enumerate(elem):
-        n1_idx = int(element[0])
-        n2_idx = int(element[1])
-        
-        orig_x = [nodes[n1_idx][0], nodes[n2_idx][0]]
-        orig_y = [nodes[n1_idx][1], nodes[n2_idx][1]]
-        
-        label = 'Original' if i == 0 else None
-        plt.plot(orig_x, orig_y, color='grey', linestyle='--', zorder=1, label=label)
-
     # Plot deformed truss shape (soft red, solid)
     for i, element in enumerate(elem):
         n1_idx = int(element[0])
@@ -46,7 +35,19 @@ def plot_deformed_truss(ret, exaggeration=1.0):
         
         # 'indianred' or '#D9534F' are nice soft red colors
         label = 'Deformed' if i == 0 else None
-        plt.plot(def_x, def_y, color='#D9534F', linewidth=2, zorder=2, label=label)
+        plt.plot(def_x, def_y, color='#D9534F', linewidth=2, zorder=1, label=label)
+
+    # Plot original truss shape (grey, dashed)
+    for i, element in enumerate(elem):
+        n1_idx = int(element[0])
+        n2_idx = int(element[1])
+        
+        orig_x = [nodes[n1_idx][0], nodes[n2_idx][0]]
+        orig_y = [nodes[n1_idx][1], nodes[n2_idx][1]]
+        
+        label = 'Original' if i == 0 else None
+        plt.plot(orig_x, orig_y, color='grey', linestyle='--', linewidth=2,zorder=2, label=label)
+
 
     # Marker scatter plot for the nodes (optional, helps visibility)
     plt.scatter(nodes[:, 0], nodes[:, 1], color='grey', zorder=3, s=20)
