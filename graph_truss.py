@@ -1,5 +1,14 @@
 import matplotlib.pyplot as plt
 
+colors = {
+    "tension":"#3978a8",
+    "compression":"#f47e1b",
+    "zero":"#cd6093",
+    "original":"#5a5353",
+    "supports":"#397b44",
+    "loads":"#8e478c",
+    "displaced_nodes":"#b6d53c"
+}
 def plot_deformed_truss(ret, exaggeration=1.0):
     """
     Graphs the original and deformed shapes of a 2D truss structure.
@@ -18,26 +27,53 @@ def plot_deformed_truss(ret, exaggeration=1.0):
     """
     nodes = ret['nodes']
     elem = ret['elem']
+    normal_forces = ret['normal_forces']
     displacements = ret['displacements_by_node']
     
     # Calculate deformed node coordinates
     deformed_nodes = nodes + (displacements * exaggeration)
 
+    # apply custom grey palette for outlines and text
+    grey_palette = ['#302c2e', '#5a5353', '#7d7071', '#a0938e', '#cfc6b8']
+    plt.rcParams.update({
+        'text.color': grey_palette[1],
+        'axes.edgecolor': grey_palette[0],
+        'axes.labelcolor': grey_palette[1],
+        'xtick.color': grey_palette[2],
+        'ytick.color': grey_palette[2],
+        'grid.color': grey_palette[3],
+        # figure background kept white for contrast
+        'figure.facecolor': 'white'
+    })
     plt.figure(figsize=(10, 6))
 
     # Plot deformed truss shape (soft red, solid)
+    deformed_label_added = False
     for i, element in enumerate(elem):
         n1_idx = int(element[0])
         n2_idx = int(element[1])
         
         def_x = [deformed_nodes[n1_idx][0], deformed_nodes[n2_idx][0]]
         def_y = [deformed_nodes[n1_idx][1], deformed_nodes[n2_idx][1]]
-        
-        # 'indianred' or '#D9534F' are nice soft red colors
-        label = 'Deformed' if i == 0 else None
-        plt.plot(def_x, def_y, color='#D9534F', linewidth=2, zorder=1, label=label)
+        normal = normal_forces[i][0]
+        is_tension = normal > 0
+        is_zero = normal == 0
+
+        # only label the first plotted element of each type once
+        label = None
+        if not deformed_label_added:
+            label = 'Deformed'
+            deformed_label_added = True
+
+        if is_zero:
+            plt.plot(def_x, def_y, color=colors['zero'], linewidth=2, zorder=1, label=label)
+        elif is_tension:
+            plt.plot(def_x, def_y, color=colors['tension'], linewidth=2, zorder=1, label=label)
+        else:
+            plt.plot(def_x, def_y, color=colors['compression'], linewidth=2, zorder=1, label=label)
 
     # Plot original truss shape (grey, dashed)
+    original_label_added = False
     for i, element in enumerate(elem):
         n1_idx = int(element[0])
         n2_idx = int(element[1])
@@ -45,13 +81,18 @@ def plot_deformed_truss(ret, exaggeration=1.0):
         orig_x = [nodes[n1_idx][0], nodes[n2_idx][0]]
         orig_y = [nodes[n1_idx][1], nodes[n2_idx][1]]
         
-        label = 'Original' if i == 0 else None
-        plt.plot(orig_x, orig_y, color='grey', linestyle='--', linewidth=2,zorder=2, label=label)
+        label = None
+        if not original_label_added:
+            label = 'Original'
+            original_label_added = True
+
+        plt.plot(orig_x, orig_y, color=colors['original'], linestyle='--', linewidth=2,zorder=2, label=label)
 
 
     # Marker scatter plot for the nodes (optional, helps visibility)
-    plt.scatter(nodes[:, 0], nodes[:, 1], color='grey', zorder=3, s=20)
-    plt.scatter(deformed_nodes[:, 0], deformed_nodes[:, 1], color='#D9534F', zorder=4, s=30)
+
+    plt.scatter(nodes[:, 0], nodes[:, 1], color=colors['original'], zorder=3, s=20)
+    plt.scatter(deformed_nodes[:, 0], deformed_nodes[:, 1], color=colors['displaced_nodes'], zorder=4, s=30)
 
     # Plot Support Conditions as blue arrows
     restr = ret.get('restr')
@@ -75,9 +116,8 @@ def plot_deformed_truss(ret, exaggeration=1.0):
                 restr_v.append(-1)
         if restr_x:
             # We use pivot='tip' so the arrow points TO the node
-            plt.quiver(restr_x, restr_y, restr_u, restr_v, color='blue', pivot='tip', zorder=5, label='Supports')
+            plt.quiver(restr_x, restr_y, restr_u, restr_v, color=colors['supports'], pivot='tip', zorder=5, label='Supports')
 
-    # Plot Applied Loads as green arrows
     app_loads = ret.get('app_loads')
     if app_loads is not None:
         load_x = []
@@ -94,14 +134,42 @@ def plot_deformed_truss(ret, exaggeration=1.0):
                 load_v.append(ly)
         if load_x:
             # Arrow points in the direction of the load, starting at the node
-            plt.quiver(load_x, load_y, load_u, load_v, color='green', zorder=6, label='Applied Loads')
+            plt.quiver(load_x, load_y, load_u, load_v, color=colors['loads'], pivot='tip', zorder=6, label='Applied Loads')
 
     # Format the plot
     plt.xlabel('X')
     plt.ylabel('Y')
     plt.title(f'Truss Analysis: Original vs. Deformed Shape (Exaggeration={exaggeration}x)')
     plt.grid(True, linestyle=':', alpha=0.7)
-    plt.legend()
+
+    # build a custom legend showing all color meanings
+    from matplotlib.lines import Line2D
+    legend_handles = []
+    legend_labels = []
+
+    # tension/compression/zero-force (deformed geometry)
+    legend_handles.append(Line2D([0], [0], color=colors['tension'], lw=2))
+    legend_labels.append('Tension (deformed)')
+    legend_handles.append(Line2D([0], [0], color=colors['compression'], lw=2))
+    legend_labels.append('Compression (deformed)')
+    legend_handles.append(Line2D([0], [0], color=colors['zero'], lw=2))
+    legend_labels.append('Zero-force member')
+
+    # original shape
+    legend_handles.append(Line2D([0], [0], color=colors['original'], linestyle='--', lw=2))
+    legend_labels.append('Original shape')
+
+    # displaced nodes
+    legend_handles.append(Line2D([0], [0], marker='o', color=colors['displaced_nodes'], lw=0, markersize=8))
+    legend_labels.append('Displaced node')
+
+    # supports and loads
+    legend_handles.append(Line2D([0], [0], color=colors['supports'], lw=2))
+    legend_labels.append('Support reaction')
+    legend_handles.append(Line2D([0], [0], color=colors['loads'], lw=2))
+    legend_labels.append('Applied load')
+
+    plt.legend(legend_handles, legend_labels, loc='best')
     plt.axis('equal') # Prevents distortion of the truss geometry
     
     plt.show()

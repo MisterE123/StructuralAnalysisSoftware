@@ -2,6 +2,8 @@
 """
 Created on Mon Feb  9 17:50:12 2026
 
+Truss analysis library.
+
 @author: Gaudeor Rudmin
 @licesne: MIT License
 
@@ -37,6 +39,16 @@ Mostly as a glorified api lookup.
 
 import numpy as np
 import math
+
+
+def num_nodes_from_elem(elem):
+    return int(np.max(elem)) + 1
+
+def check_stable(S_ff):
+    try:
+        np.linalg.cholesky(S_ff)
+    except np.LinAlgError:
+        raise ValueError("Truss Is Unstable")
 
 def element_global_stiffness(nodes, elem, elast, areas):
 
@@ -130,7 +142,7 @@ def assemble_and_partition(K_members, restrained_dofs, elem):
     # this gets the largest node idx from the element list
     # a clever way to extract the number of nodes without
     # actually passing the node list
-    num_nodes = int(np.max(elem)) + 1
+    num_nodes = num_nodes_from_elem(elem)
     
     ndof = 2* num_nodes
     
@@ -188,12 +200,12 @@ def assemble_and_partition(K_members, restrained_dofs, elem):
     temp_arr = np.delete(S, restr_dof_idxs, axis=0) 
     #delete restrained cols leaving free
     S_ff = np.delete(temp_arr, restr_dof_idxs, axis=1) 
-    
+    #check that the truss is in fact stable
+    check_stable(S_ff)
     #delete free rows leaving restr
     temp_arr_2 = np.delete(S, free_dof_idxs, axis=0) 
     #delete restrained cols leaving free
     S_rf = np.delete(temp_arr_2, restr_dof_idxs, axis=1) 
-
     # we now have S, S_ff, and S_rf
     return S, S_ff, S_rf
 
@@ -463,14 +475,12 @@ def analyze_model(nodes, elem, elast, areas, restr, app_loads, debug=False):
     K_list, T_list = element_global_stiffness(nodes, elem, elast, areas)
     
     if debug:
-        print("T_list = ")
-        print(T_list)
-        print("K(1) = ")
-        print(K_list[0])
-        print("K(5) = ")
-        print(K_list[4])
-        print("K(10) = ")
-        print(K_list[9])
+        for i, T in enumerate(T_list):
+            print("T(",i,") = ")
+            print(T)
+        for i, K in enumerate(K_list):
+            print("K(",i,") = ")
+            print(K)
         
     S, S_ff, S_rf = assemble_and_partition(K_list, restr, elem)
 
@@ -505,7 +515,7 @@ def analyze_model(nodes, elem, elast, areas, restr, app_loads, debug=False):
     if debug:
         print("")
         print("P_r= ")
-        print(d_f)
+        print(P_r)
     
     displacements = assemble_full_displacement_vector(d_f, restr)
     forces = assemble_full_load_vector(P_f, P_r, restr)
@@ -581,10 +591,18 @@ class TrussModel2D:
                   area           = 8, #in^2  # cross-sectional area of element
                   materialname   = "steel"   # name of element's material
                   )
-        displacements, forces = m.run_analysis(
-            debug=True   # whether to print out all intermediate 
-                         # calculations
-                       )
+        ret = m.run_analysis(debug=True) # debug = True will print all intermediate data. 
+        # ret will have 
+        #        {"nodes":nodes,
+        #        "restr":restr,
+        #        "app_loads":app_loads,
+        #        "elem":elem,
+        #        "elast":elast,
+        #        "areas":areas,
+        #        "displacements_by_node":displacements_by_node,
+        #        "forces_by_node":forces_by_node,
+        #        "normal_forces":normal_forces
+        #        }
     """
     def __init__(self, xgrid=1, ygrid=1):
         self.xgrid = float(xgrid)

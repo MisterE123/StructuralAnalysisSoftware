@@ -6,11 +6,10 @@ import numpy as np
 
 from stiffness_matrix import TrussModel2D
 
-pn.extension('tabulator', sizing_mode="stretch_width")
+pn.extension(sizing_mode="stretch_width")
 hv.extension('bokeh')
 
 def point_line_distance(px, py, x1, y1, x2, y2):
-    """Calculate distance from point (px,py) to line segment (x1,y1)-(x2,y2)."""
     l2 = (x2 - x1)**2 + (y2 - y1)**2
     if l2 == 0: 
         return np.sqrt((px - x1)**2 + (py - y1)**2)
@@ -20,455 +19,311 @@ def point_line_distance(px, py, x1, y1, x2, y2):
     return np.sqrt((px - proj_x)**2 + (py - proj_y)**2)
 
 class TrussApp(param.Parameterized):
-    # --- Input DataFrames ---
-    nodes_df = param.DataFrame(pd.DataFrame({
-        'label': ['node1', 'node2', 'node3', 'node4', 'node5', 'node6'],
-        'x': [0.0, 1.0, 2.0, 3.0, 1.0, 2.0],
-        'y': [0.0, 0.0, 0.0, 0.0, 1.0, 1.0],
-        'restx': [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        'resty': [1.0, 0.0, 1.0, 1.0, 0.0, 0.0],
-        'loadx': [0.0, 0.0, 0.0, 0.0, 25.0, 0.0],
-        'loady': [0.0, -75.0, 0.0, 0.0, 0.0, 60.0]
-    }))
-    
-    materials_df = param.DataFrame(pd.DataFrame({
-        'name': ['steel', 'aluminum'],
-        'E': [29000.0, 10000.0]
-    }))
-    
-    elements_df = param.DataFrame(pd.DataFrame({
-        'label': ['elem1', 'elem2', 'elem3', 'elem4', 'elem5', 'elem6', 'elem7', 'elem8', 'elem9', 'elem10'],
-        'start': ['node1', 'node2', 'node3', 'node5', 'node2', 'node3', 'node1', 'node2', 'node3', 'node4'],
-        'end':   ['node2', 'node3', 'node4', 'node6', 'node5', 'node6', 'node5', 'node6', 'node5', 'node6'],
-        'area':  [8.0, 8.0, 16.0, 8.0, 8.0, 8.0, 12.0, 12.0, 12.0, 16.0],
-        'material': ['steel', 'steel', 'aluminum', 'steel', 'steel', 'steel', 'steel', 'steel', 'steel', 'aluminum']
-    }))
+    # Data DataFrames
+    nodes_df = param.DataFrame(pd.DataFrame(columns=['label', 'x', 'y', 'restx', 'resty', 'loadx', 'loady', 'by_grid']))
+    elements_df = param.DataFrame(pd.DataFrame(columns=['label', 'start', 'end', 'area', 'material']))
+    materials_df = param.DataFrame(pd.DataFrame({'name': ['steel'], 'E': [29000.0]}))
 
-    # --- App State ---
-    grid_spacing_x = param.Number(288.0, bounds=(0.1, None), doc="Grid spacing X")
-    grid_spacing_y = param.Number(216.0, bounds=(0.1, None), doc="Grid spacing Y")
-    exaggeration = param.Number(100.0, bounds=(1, 1000), doc="Deformation scale multiplier")
+    # Core State
+    mode = param.Selector(default='Nodes and Members', objects=['Nodes and Members', 'Supports', 'Loads', 'Properties', 'Results'])
+    active_tool = param.Selector(default='Select', objects=['Select', 'Draw Node', 'Draw Member', 'Delete'])
+    
+    grid_x = param.Number(10.0, bounds=(0.1, None))
+    grid_y = param.Number(10.0, bounds=(0.1, None))
+    snap_to_grid = param.Boolean(default=True)
+    
+    # Internal Canvas State
+    current_start_node = param.String(None)
     status = param.String("Ready")
-    
-    # --- UI Tool Modes ---
-    tool_mode = param.Selector(default='Nodes', objects=['Nodes', 'Members', 'Supports', 'Loads', 'Properties'])
-    paint_material = param.Selector(default='steel', objects=['steel', 'aluminum'])
-    paint_area = param.Number(8.0, bounds=(0.01, None))
-    apply_load_x = param.Number(0.0)
-    apply_load_y = param.Number(0.0)
-    
-    # Internal state for drawing members
-    current_start_node = param.String(None) 
-    
-    # --- Output DataFrames ---
-    disp_result_df = param.DataFrame(pd.DataFrame({'Node Index': [0], 'dx': [0.0], 'dy': [0.0]}))
-    force_result_df = param.DataFrame(pd.DataFrame({'Node Index': [0], 'Fx': [0.0], 'Fy': [0.0]}))
-    normal_force_df = param.DataFrame(pd.DataFrame({'Element Index': [0], 'Normal Force': [0.0]}))
-    
-    # We will hold on to the last `ret` from run_analysis here to redraw efficiently
-    last_analysis_ret = param.Dict(default={})
+    analysis_results = param.Dict(default={})
 
-    # --- Actions ---
-    solve_action = param.Action(lambda self: self._run_solve(), label='Solve Truss')
-    
-    # --- Tools & Interact ---
+    # Streams
+    tap_stream = hv.streams.Tap(x=None, y=None)
+
     def __init__(self, **params):
         super().__init__(**params)
-        
-        # Streams for interactive drawing
-        self.node_stream = hv.streams.PointDraw(
-            data=self.nodes_df[['x', 'y', 'label']].to_dict('list'),
-            num_objects=100
-        )
-        self.node_stream.param.watch(self._sync_nodes, 'data')
-        
-        # Tap stream for interaction modes
-        self.tap_stream = hv.streams.Tap(x=None, y=None)
         self.tap_stream.param.watch(self._on_tap, ['x', 'y'])
         
-        self.param.watch(self._update_materials, 'materials_df')
+        # Start with one default node
+        self._add_node(0.0, 0.0)
 
-    def _update_materials(self, event):
-        mats = self.materials_df['name'].tolist()
-        if mats:
-            self.param.paint_material.objects = mats
-            if self.paint_material not in mats:
-                self.paint_material = mats[0]
+    def _snap(self, val, step):
+        if not self.snap_to_grid or step <= 0: return val
+        return round(val / step) * step
 
-    def _sync_nodes(self, event):
-        """Update nodes DataFrame when nodes are drawn/moved in canvas."""
-        if getattr(self, '_first_sync', True):
-            self._first_sync = False
-            return
-            
-        data = event.new
-        if data and 'x' in data:
-            current_df = self.nodes_df.copy()
-            new_df = pd.DataFrame(data)
-            
-            # Merge while keeping existing columns like restx, loadx
-            if len(new_df) > len(current_df):
-                # Node added
-                diff = len(new_df) - len(current_df)
-                for i in range(diff):
-                    new_idx = len(current_df) + i
-                    new_df.loc[new_idx, 'label'] = f"node{new_idx+1}"
-                    for col in ['restx', 'resty', 'loadx', 'loady']:
-                        new_df.loc[new_idx, col] = 0.0
-            
-            # Update matching nodes natively
-            for col in current_df.columns:
-                if col not in new_df.columns and col in current_df:
-                    # fill missing cols
-                    new_df[col] = current_df[col]
-            new_df = new_df.fillna(0)
-            
-            # Prevent updating if no changes occurred to avoid Tabulator render crashes
-            if current_df.equals(new_df):
-                return
-                
-            self.nodes_df = new_df
+    def _add_node(self, x, y):
+        df = self.nodes_df.copy()
+        new_idx = len(df)
+        label = f"Node{new_idx+1}"
+        df.loc[new_idx] = [label, float(x), float(y), 0.0, 0.0, 0.0, 0.0, True]
+        self.nodes_df = df
+        return label
 
-    def find_nearest_node(self, x, y, threshold=0.5):
-        if x is None or y is None: return None
-        best_dist = float('inf')
-        best_idx = None
+    def _add_member(self, start_lbl, end_lbl):
+        df = self.elements_df.copy()
+        exists = df[((df['start']==start_lbl)&(df['end']==end_lbl)) | ((df['start']==end_lbl)&(df['end']==start_lbl))]
+        if not exists.empty: return
+        new_idx = len(df)
+        label = f"elem{new_idx+1}"
+        df.loc[new_idx] = [label, start_lbl, end_lbl, 8.0, "steel"]
+        self.elements_df = df
+
+    def find_nearest_node(self, x, y, threshold=None):
+        if x is None or y is None or self.nodes_df.empty: return None
+        if threshold is None: threshold = min(self.grid_x, self.grid_y) * 0.4
+        best_dist, best_idx = float('inf'), None
         for idx, row in self.nodes_df.iterrows():
             d = np.sqrt((row['x'] - x)**2 + (row['y'] - y)**2)
             if d < best_dist:
                 best_dist = d
                 best_idx = idx
-        if best_dist < threshold:
-            return best_idx
+        if best_dist < threshold: return best_idx
         return None
 
-    def find_nearest_elem(self, x, y, threshold=0.5):
-        if x is None or y is None: return None
+    def find_nearest_elem(self, x, y, threshold=None):
+        if x is None or y is None or self.elements_df.empty or self.nodes_df.empty: return None
+        if threshold is None: threshold = min(self.grid_x, self.grid_y) * 0.3
         node_lookup = {row['label']: (row['x'], row['y']) for _, row in self.nodes_df.iterrows()}
-        best_dist = float('inf')
-        best_idx = None
+        best_dist, best_idx = float('inf'), None
         for idx, el in self.elements_df.iterrows():
             if el['start'] in node_lookup and el['end'] in node_lookup:
-                s = node_lookup[el['start']]
-                e = node_lookup[el['end']]
+                s, e = node_lookup[el['start']], node_lookup[el['end']]
                 d = point_line_distance(x, y, s[0], s[1], e[0], e[1])
                 if d < best_dist:
                     best_dist = d
                     best_idx = idx
-        if best_dist < threshold:
-            return best_idx
+        if best_dist < threshold: return best_idx
         return None
 
     def _on_tap(self, *events):
-        # Depending on mode, handle canvas taps.
         x, y = self.tap_stream.x, self.tap_stream.y
-        if x is None or y is None: 
-            return
-            
-        threshold = 0.5 # Snapping threshold in logical grid coordinates
+        if x is None or y is None: return
         
-        if self.tool_mode == 'Members':
-            n_idx = self.find_nearest_node(x, y, threshold)
-            if n_idx is not None:
-                lbl = self.nodes_df.at[n_idx, 'label']
-                if self.current_start_node is None:
-                    self.current_start_node = lbl
+        nx, ny = x, y
+        if self.snap_to_grid:
+            nx = self._snap(x, self.grid_x)
+            ny = self._snap(y, self.grid_y)
+            
+        if self.mode == 'Nodes and Members':
+            if self.active_tool == 'Draw Node':
+                n_idx = self.find_nearest_node(x, y)
+                if n_idx is None:
+                    self._add_node(nx, ny)
+            
+            elif self.active_tool == 'Draw Member':
+                n_idx = self.find_nearest_node(x, y)
+                if n_idx is not None:
+                    lbl = self.nodes_df.at[n_idx, 'label']
+                    if self.current_start_node is None:
+                        self.current_start_node = lbl
+                    else:
+                        if self.current_start_node != lbl:
+                            self._add_member(self.current_start_node, lbl)
+                        self.current_start_node = None
                 else:
-                    if self.current_start_node != lbl:
-                        # Append new element
-                        new_el = len(self.elements_df)
-                        lbl_el = f"elem{new_el+1}"
-                        # Adding element to dataframe
-                        df = self.elements_df.copy()
-                        df.loc[new_el] = [lbl_el, self.current_start_node, lbl, self.paint_area, self.paint_material]
-                        self.elements_df = df
-                    self.current_start_node = None
+                    self.current_start_node = None # cancel
                     
-        elif self.tool_mode == 'Supports':
-            n_idx = self.find_nearest_node(x, y, threshold)
-            if n_idx is not None:
-                df = self.nodes_df.copy()
-                rx = df.at[n_idx, 'restx']
-                ry = df.at[n_idx, 'resty']
-                # Cycle: Free(0,0)->Pinned(1,1)->RollerX(0,1)->RollerY(1,0)
-                if rx == 0 and ry == 0:
-                    rx, ry = 1.0, 1.0
-                elif rx == 1 and ry == 1:
-                    rx, ry = 0.0, 1.0
-                elif rx == 0 and ry == 1:
-                    rx, ry = 1.0, 0.0
+            elif self.active_tool == 'Delete':
+                e_idx = self.find_nearest_elem(x, y)
+                if e_idx is not None:
+                    self.elements_df = self.elements_df.drop(e_idx).reset_index(drop=True)
                 else:
-                    rx, ry = 0.0, 0.0
-                df.at[n_idx, 'restx'] = rx
-                df.at[n_idx, 'resty'] = ry
-                self.nodes_df = df
-                
-        elif self.tool_mode == 'Loads':
-            n_idx = self.find_nearest_node(x, y, threshold)
-            if n_idx is not None:
-                df = self.nodes_df.copy()
-                df.at[n_idx, 'loadx'] = self.apply_load_x
-                df.at[n_idx, 'loady'] = self.apply_load_y
-                self.nodes_df = df
-                
-        elif self.tool_mode == 'Properties':
-            e_idx = self.find_nearest_elem(x, y, threshold)
-            if e_idx is not None:
-                df = self.elements_df.copy()
-                df.at[e_idx, 'area'] = self.paint_area
-                df.at[e_idx, 'material'] = self.paint_material
-                self.elements_df = df
+                    n_idx = self.find_nearest_node(x, y)
+                    if n_idx is not None:
+                        df = self.nodes_df.drop(n_idx).reset_index(drop=True)
+                        self.nodes_df = df
+                        # Cascade delete
+                        valid = set(df['label'].tolist())
+                        edf = self.elements_df.copy()
+                        if not edf.empty:
+                            edf = edf[edf['start'].isin(valid) & edf['end'].isin(valid)].reset_index(drop=True)
+                            self.elements_df = edf
 
-    @param.depends('tool_mode', watch=True)
-    def _clear_start_node(self):
+    @param.depends('mode', watch=True)
+    def _reset_tools(self):
         self.current_start_node = None
-
-    def _run_solve(self):
-        self.status = "Solving..."
-        try:
-            m = TrussModel2D()
-            m.set_xgrid(self.grid_spacing_x)
-            m.set_ygrid(self.grid_spacing_y)
+        if self.mode != 'Nodes and Members':
+            self.active_tool = 'Select'
             
-            # 1. Add definitions
-            for _, row in self.materials_df.iterrows():
-                m.add_material(str(row['name']), float(row['E']))
-                
-            for _, row in self.nodes_df.iterrows():
-                m.add_node(
-                    x=float(row['x']), y=float(row['y']), label=str(row['label']),
-                    restx=int(row['restx']), resty=int(row['resty']),
-                    loadx=float(row['loadx']), loady=float(row['loady']),
-                    use_grid=True
-                )
-                
-            for _, row in self.elements_df.iterrows():
-                m.add_elem(
-                    nodeStart=str(row['start']), nodeEnd=str(row['end']),
-                    label=str(row['label']), area=float(row['area']),
-                    materialname=str(row['material'])
-                )
-            
-            # 2. Solve
-            ret = m.run_analysis(debug=False)
-            self.last_analysis_ret = ret
-            
-            # 3. Present data in output DFs
-            nodes_len = len(ret['nodes'])
-            elem_len = len(ret['elem'])
-            
-            disp = ret['displacements_by_node']
-            self.disp_result_df = pd.DataFrame({
-                'Node Index': range(nodes_len),
-                'dx': disp[:, 0], 'dy': disp[:, 1]
-            })
-            
-            forces = ret['forces_by_node']
-            self.force_result_df = pd.DataFrame({
-                'Node Index': range(nodes_len),
-                'Fx': forces[:, 0], 'Fy': forces[:, 1]
-            })
-            
-            n_forces = ret['normal_forces']
-            self.normal_force_df = pd.DataFrame({
-                'Element Index': range(elem_len),
-                'Normal Force': n_forces[:, 0]
-            })
-            
-            self.status = "Solved successfully."
-            
-        except Exception as e:
-            self.status = f"Error: {str(e)}"
-
-    @param.depends('nodes_df', 'elements_df', 'grid_spacing_x', 'grid_spacing_y', 'tool_mode', 'current_start_node')
-    def plot_input_canvas(self):
-        """HoloViews plot for interactive truss drawing."""
-        gx = self.grid_spacing_x
-        gy = self.grid_spacing_y
+    # --- UI Generators ---
+    
+    @param.depends('nodes_df', 'elements_df', 'grid_x', 'grid_y', 'mode', 'active_tool', 'current_start_node')
+    def plot_canvas(self):
+        gx, gy = max(0.1, self.grid_x), max(0.1, self.grid_y)
         
-        # Tools logic
-        tools = ['hover']
-        active_tools = []
-        if self.tool_mode == 'Nodes':
-            active_tools = ['point_draw']
-        else:
-            tools.append('tap')
-            active_tools = ['tap']
-
-        # Plot points (nodes)
-        pts = hv.Points(self.nodes_df, kdims=['x', 'y'], vdims=['label', 'restx', 'resty', 'loadx', 'loady'])
-        pts = pts.opts(size=10, color='blue', tools=tools, active_tools=active_tools)
+        # Base Points
+        pts_dict = {'x': [], 'y': [], 'label': []}
+        if not self.nodes_df.empty: pts_dict = self.nodes_df.to_dict('list')
+        pts = hv.Points(pts_dict, kdims=['x', 'y'], vdims=['label']).opts(
+            size=14, color='gray', line_color='black', tools=['hover', 'tap'], active_tools=['tap']
+        )
+        self.tap_stream.source = pts
         
-        # We must reassign streams safely
-        if self.tool_mode == 'Nodes':
-            self.node_stream.source = pts
-        else:
-            self.tap_stream.source = pts
-        
-        # Plot lines (elements)
+        # Base Lines
         lines = []
-        node_lookup = {row['label']: (row['x'], row['y']) for _, row in self.nodes_df.iterrows()}
-        for _, el in self.elements_df.iterrows():
-            if el['start'] in node_lookup and el['end'] in node_lookup:
-                s = node_lookup[el['start']]
-                e = node_lookup[el['end']]
-                lines.append([(s[0], s[1]), (e[0], e[1])])
-                
-        element_paths = hv.Path(lines).opts(color='gray', line_width=2)
+        node_lookup = {}
+        if not self.nodes_df.empty:
+            node_lookup = {row['label']: (row['x'], row['y']) for _, row in self.nodes_df.iterrows()}
+        if not self.elements_df.empty:
+            for _, el in self.elements_df.iterrows():
+                if el['start'] in node_lookup and el['end'] in node_lookup:
+                    lines.append([node_lookup[el['start']], node_lookup[el['end']]])
+        paths = hv.Path(lines).opts(color='black', line_width=2)
         
-        # Active member drawing visualization
+        # Origin Axes
+        ox = hv.Curve([(0, 0), (gx*2, 0)]).opts(color='gray', line_width=3)
+        oy = hv.Curve([(0, 0), (0, gy*2)]).opts(color='gray', line_width=3)
+        otx = hv.Text(gx*2 + gx*0.2, 0, "X").opts(color='black', text_font_size='12pt')
+        oty = hv.Text(0, gy*2 + gy*0.2, "Y").opts(color='black', text_font_size='12pt')
+        origin = ox * oy * otx * oty
+        
+        # Draw Preview State
         draw_pts = None
-        if self.tool_mode == 'Members' and self.current_start_node and self.current_start_node in node_lookup:
-            node_coord = node_lookup[self.current_start_node]
-            draw_pts = hv.Points([node_coord]).opts(size=14, color='orange')
-        
-        # Show support conditions
-        supports = []
-        for _, n in self.nodes_df.iterrows():
-            if n['restx'] or n['resty']:
-                supports.append((n['x'], n['y']))
-                
-        supp_pts = hv.Points(supports).opts(size=14, marker='square', color='red', fill_alpha=0)
-        
-        # Show loads
-        load_vectors = []
-        for _, n in self.nodes_df.iterrows():
-            lx, ly = n['loadx'], n['loady']
-            if lx != 0 or ly != 0:
-                # Quiver uses x, y, angle, magnitude
-                angle = np.arctan2(ly, lx)
-                mag = np.sqrt(lx**2 + ly**2)
-                # Just draw a dot for loads on input since HoloViews quiver is sometimes tricky
-                load_vectors.append((n['x'], n['y']))
-        load_pts = hv.Points(load_vectors).opts(size=10, marker='triangle', color='green')
-
-        layout = (element_paths * pts * supp_pts * load_pts)
-        if draw_pts:
-            layout = layout * draw_pts
+        if self.mode == 'Nodes and Members' and self.active_tool == 'Draw Member' and self.current_start_node in node_lookup:
+            draw_pts = hv.Points([node_lookup[self.current_start_node]]).opts(size=18, color='orange', alpha=0.6)
             
+        layout = (paths * pts * origin)
+        if draw_pts: layout *= draw_pts
+        
+        max_x, max_y = gx*10, gy*10
+        if not self.nodes_df.empty:
+            max_x = max(max_x, self.nodes_df['x'].max() + gx*2)
+            max_y = max(max_y, self.nodes_df['y'].max() + gy*2)
+            
+        xticks = [i * gx for i in range(-5, int(max_x / gx) + 5)]
+        yticks = [i * gy for i in range(-5, int(max_y / gy) + 5)]
+        
         return layout.opts(
-            width=600, height=400, title=f"Input Canvas (Mode: {self.tool_mode})",
-            xaxis=None, yaxis=None, show_grid=True
+            width=900, height=700, show_grid=True, xticks=xticks, yticks=yticks,
+            xlim=(-gx*2, max_x), ylim=(-gy*2, max_y), data_aspect=1,
+            toolbar=None, # Clean aesthetic
+            bgcolor='#e8e8e8'
         )
-        
-    @param.depends('last_analysis_ret', 'exaggeration')
-    def plot_deformed_shape(self):
-        """HoloViews plot for the final deformed shape."""
-        ret = self.last_analysis_ret
-        if not ret or 'nodes' not in ret:
-            return hv.Text(0.5, 0.5, "Solve model to view results").opts(width=600, height=400)
-            
-        nodes = ret['nodes']
-        elem = ret['elem']
-        disp = ret['displacements_by_node']
-        ex = self.exaggeration
-        
-        def_nodes = nodes + (disp * ex)
-        
-        # Original paths
-        orig_lines = []
-        for el in elem:
-            s, e = int(el[0]), int(el[1])
-            orig_lines.append([nodes[s], nodes[e]])
-        orig_paths = hv.Path(orig_lines).opts(color='gray', line_dash='dashed', line_width=2)
-        
-        # Deformed paths
-        def_lines = []
-        for el in elem:
-            s, e = int(el[0]), int(el[1])
-            def_lines.append([def_nodes[s], def_nodes[e]])
-        def_paths = hv.Path(def_lines).opts(color='#D9534F', line_width=3)
-        
-        orig_pts = hv.Points(nodes).opts(color='gray', size=5)
-        def_pts = hv.Points(def_nodes).opts(color='#D9534F', size=8)
-        
-        layout = (orig_paths * orig_pts * def_paths * def_pts).opts(
-            width=600, height=400, title=f"Deformed Shape (Scale = {ex}x)",
-            show_grid=True, data_aspect=1
-        )
-        return layout
 
-# --- Layout ---
+    # --- Properties Sidebar Logic ---
+    
+    def _update_node_prop(self, idx, col, val):
+        df = self.nodes_df.copy()
+        df.at[idx, col] = val
+        if col in ['x', 'y'] and self.snap_to_grid and df.at[idx, 'by_grid']:
+            df.at[idx, col] = self._snap(float(val), self.grid_x if col=='x' else self.grid_y)
+        self.nodes_df = df
+
+    @param.depends('nodes_df', 'elements_df', 'mode')
+    def get_properties_sidebar(self):
+        if self.mode != 'Nodes and Members':
+            return pn.Column(pn.pane.Markdown(f"*{self.mode} properties not active.*"))
+            
+        # Nodes
+        node_items = [pn.pane.Markdown("### Nodes", margin=(0,0,10,0))]
+        for idx, row in self.nodes_df.iterrows():
+            w_name = pn.widgets.TextInput(value=row['label'], name="Name", width=120, margin=(0,5,0,0))
+            w_name.param.watch(lambda e, i=idx: self._update_node_prop(i, 'label', e.new), 'value')
+            
+            w_bygrid = pn.widgets.Checkbox(value=row.get('by_grid', True), name="By grid", margin=(5,0,0,0))
+            w_bygrid.param.watch(lambda e, i=idx: self._update_node_prop(i, 'by_grid', e.new), 'value')
+            
+            w_x = pn.widgets.FloatInput(value=float(row['x']), name="X", width=60, margin=(0,5,0,0))
+            w_x.param.watch(lambda e, i=idx: self._update_node_prop(i, 'x', e.new), 'value')
+            
+            w_y = pn.widgets.FloatInput(value=float(row['y']), name="Y", width=60, margin=(0,0,0,0))
+            w_y.param.watch(lambda e, i=idx: self._update_node_prop(i, 'y', e.new), 'value')
+            
+            card = pn.Column(
+                pn.Row(w_name, w_bygrid),
+                pn.Row(w_x, w_y),
+                margin=(0,0,15,0)
+            )
+            node_items.append(card)
+            
+        node_items.append(pn.widgets.Button(name='[+]', width=50, button_type='light', on_click=lambda e: self._add_node(0,0)))
+        
+        # Members
+        member_items = [pn.pane.Markdown("### Members", margin=(20,0,10,0))]
+        node_lbls = self.nodes_df['label'].tolist() if not self.nodes_df.empty else []
+        for idx, row in self.elements_df.iterrows():
+            w_name = pn.widgets.TextInput(value=row['label'], name="Name", width=120)
+            # Simplistic for prototype: just show text
+            card = pn.Column(
+                w_name,
+                pn.pane.Markdown(f"start: [{row['start']}]<br>end: [{row['end']}]", style={'color': '#555'}),
+                margin=(0,0,15,0)
+            )
+            member_items.append(card)
+            
+        return pn.Column(*(node_items + member_items), width=300, scroll=True, height=700, css_classes=['prop-sidebar'])
+
+
+# --- CSS and Layout Assembly ---
+css = """
+.top-bar {
+    background-color: #f2f2f2;
+    border-bottom: 2px solid #5ab0f5;
+    padding: 10px 20px;
+}
+.left-toolbar {
+    background-color: #e2e2e2;
+    padding: 15px;
+}
+.prop-sidebar {
+    background-color: #555555;
+    color: #e0e0e0;
+    padding: 20px;
+}
+.prop-sidebar .bk-input {
+    background-color: #777;
+    color: white;
+    border: none;
+}
+"""
+pn.extension(raw_css=[css])
+
 app = TrussApp()
 
-# Widgets
-w_grid_x = pn.widgets.FloatInput.from_param(app.param.grid_spacing_x)
-w_grid_y = pn.widgets.FloatInput.from_param(app.param.grid_spacing_y)
-w_solve = pn.widgets.Button.from_param(app.param.solve_action, button_type='primary')
-w_status = pn.widgets.StaticText.from_param(app.param.status)
-w_exag = pn.widgets.FloatSlider.from_param(app.param.exaggeration)
-
-w_tool = pn.widgets.RadioButtonGroup.from_param(app.param.tool_mode, button_type='success', sizing_mode='stretch_width')
-
-@pn.depends(app.param.tool_mode)
-def get_tool_sidebar(mode):
-    if mode == 'Properties':
-        return pn.Column(
-            pn.pane.Markdown("**Paint Area/Material on existing members:**"),
-            pn.widgets.Select.from_param(app.param.paint_material),
-            pn.widgets.FloatInput.from_param(app.param.paint_area)
-        )
-    elif mode == 'Loads':
-        return pn.Column(
-            pn.pane.Markdown("**Tap node to apply this load:**"),
-            pn.widgets.FloatInput.from_param(app.param.apply_load_x, name="Load X"),
-            pn.widgets.FloatInput.from_param(app.param.apply_load_y, name="Load Y")
-        )
-    elif mode == 'Supports':
-        return pn.pane.Markdown("**Tap node to cycle supports (Free -> Pinned -> Roller-X -> Roller-Y).**")
-    elif mode == 'Members':
-        return pn.pane.Markdown("**Tap two nodes sequentially to draw an element connecting them.**")
-    elif mode == 'Nodes':
-        return pn.pane.Markdown("**Click empty space to create nodes or drag existing ones.**")
-    return pn.pane.Markdown("")
-
-# Tables
-t_materials = pn.widgets.Tabulator(app.param.materials_df, height=150)
-t_nodes = pn.widgets.Tabulator(app.param.nodes_df, height=250)
-t_elements = pn.widgets.Tabulator(app.param.elements_df, height=250)
-
-t_res_disp = pn.widgets.Tabulator(app.param.disp_result_df, disabled=True, height=200)
-t_res_force = pn.widgets.Tabulator(app.param.force_result_df, disabled=True, height=200)
-t_res_nf = pn.widgets.Tabulator(app.param.normal_force_df, disabled=True, height=200)
-
-input_tab = pn.Row(
-    pn.Column(
-        pn.pane.Markdown("### Structure Definition"),
-        pn.Row(w_grid_x, w_grid_y),
-        pn.pane.Markdown("**Materials**"), t_materials,
-        pn.pane.Markdown("**Nodes**"), t_nodes,
-        pn.pane.Markdown("**Elements**"), t_elements,
-        width=500
-    ),
-    pn.Column(
-        pn.pane.Markdown("### Interactive Canvas"),
-        w_tool,
-        pn.panel(get_tool_sidebar),
-        pn.panel(app.plot_input_canvas)
-    )
+# Top Bar Components
+top_bar = pn.Row(
+    pn.pane.Markdown("File", margin=(10,20,0,0)),
+    pn.widgets.Select.from_param(app.param.mode, name="", width=250, margin=(5,20,0,0)),
+    pn.layout.HSpacer(),
+    pn.widgets.Checkbox.from_param(app.param.snap_to_grid, name="Snap", margin=(10,10,0,0)),
+    pn.widgets.FloatInput.from_param(app.param.grid_x, name="Grid x:", width=70, margin=(5,5,0,0)),
+    pn.widgets.FloatInput.from_param(app.param.grid_y, name="y:", width=70, margin=(5,20,0,0)),
+    css_classes=['top-bar'], sizing_mode='stretch_width'
 )
 
-results_tab = pn.Row(
-    pn.Column(
-        pn.pane.Markdown("### Results Dashboard"),
-        w_exag,
-        pn.panel(app.plot_deformed_shape)
-    ),
-    pn.Column(
-        pn.pane.Markdown("**Displacements**"), t_res_disp,
-        pn.pane.Markdown("**Reactions/Forces**"), t_res_force,
-        pn.pane.Markdown("**Axial Forces**"), t_res_nf,
-        width=400
-    )
+# Left Toolbar Components
+# We use simple buttons to switch 'active_tool' param
+def set_tool(event): app.active_tool = event.obj.name
+b_sel = pn.widgets.Button(name='Select', width=50, height=50)
+b_nod = pn.widgets.Button(name='Draw Node', width=50, height=50) # Prototype Icon representation
+b_mem = pn.widgets.Button(name='Draw Member', width=50, height=50)
+b_del = pn.widgets.Button(name='Delete', width=50, height=50)
+
+b_sel.on_click(set_tool)
+b_nod.on_click(set_tool)
+b_mem.on_click(set_tool)
+b_del.on_click(set_tool)
+
+@param.depends(app.param.active_tool)
+def get_toolbar(active):
+    b_sel.button_type = 'primary' if active == 'Select' else 'light'
+    b_nod.button_type = 'primary' if active == 'Draw Node' else 'light'
+    b_mem.button_type = 'primary' if active == 'Draw Member' else 'light'
+    b_del.button_type = 'primary' if active == 'Delete' else 'light'
+    return pn.Column(b_sel, b_nod, b_mem, b_del, css_classes=['left-toolbar'], width=80, height=700)
+
+main_area = pn.Row(
+    get_toolbar,
+    pn.panel(app.plot_canvas),
+    pn.panel(app.get_properties_sidebar),
+    sizing_mode='stretch_width'
 )
 
-main_layout = pn.Column(
-    pn.pane.Markdown("# Interactive 2D Truss Solver"),
-    pn.Row(w_solve, w_status),
-    pn.Tabs(
-        ("Input", input_tab),
-        ("Results", results_tab)
-    )
+dashboard = pn.Column(
+    top_bar,
+    main_area,
+    sizing_mode='stretch_width',
+    margin=0
 )
 
-main_layout.servable()
+dashboard.servable()
