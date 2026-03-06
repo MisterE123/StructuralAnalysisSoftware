@@ -41,10 +41,16 @@ import numpy as np
 import math
 
 
+
 def num_nodes_from_elem(elem):
     return int(np.max(elem)) + 1
 
 def check_stable(S_ff):
+    """
+    Checks the stability of the truss by attempting to perform a Cholesky decomposition
+    on the free-free stiffness matrix S_ff. If S_ff is not positive definite, it
+    raises a ValueError indicating that the truss is unstable.
+    """
     try:
         np.linalg.cholesky(S_ff)
     except np.LinAlgError:
@@ -715,7 +721,10 @@ class TrussModel2D:
                "areas":areas,
                "displacements_by_node":displacements_by_node,
                "forces_by_node":forces_by_node,
-               "normal_forces":normal_forces
+               "normal_forces":normal_forces,
+               "nodes_list":self.nodeList,
+               "elem_list":self.elemList,
+               "matr_list":self.matrList
                }
         
         return ret

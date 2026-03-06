@@ -9,7 +9,7 @@ colors = {
     "loads":"#8e478c",
     "displaced_nodes":"#b6d53c"
 }
-def plot_deformed_truss(ret, exaggeration=1.0):
+def plot_deformed_truss(ret, exaggeration=1.0, force_visual_scale=1.0, zoom_factor=1.0):
     """
     Graphs the original and deformed shapes of a 2D truss structure.
     
@@ -26,8 +26,11 @@ def plot_deformed_truss(ret, exaggeration=1.0):
         distinct. The default is 1.0.
     """
     nodes = ret['nodes']
+    node_list = ret['nodes_list']
+    elem_list = ret['elem_list']
     elem = ret['elem']
     normal_forces = ret['normal_forces']
+    forces_by_node = ret['forces_by_node']
     displacements = ret['displacements_by_node']
     
     # Calculate deformed node coordinates
@@ -116,7 +119,7 @@ def plot_deformed_truss(ret, exaggeration=1.0):
                 restr_v.append(-1)
         if restr_x:
             # We use pivot='tip' so the arrow points TO the node
-            plt.quiver(restr_x, restr_y, restr_u, restr_v, color=colors['supports'], pivot='tip', zorder=5, label='Supports')
+            plt.quiver(restr_x, restr_y, restr_u, restr_v, color=colors['supports'], pivot='tip', zorder=5, label='Supports',)
 
     app_loads = ret.get('app_loads')
     if app_loads is not None:
@@ -172,4 +175,68 @@ def plot_deformed_truss(ret, exaggeration=1.0):
     plt.legend(legend_handles, legend_labels, loc='best')
     plt.axis('equal') # Prevents distortion of the truss geometry
     
+    plt.show()
+
+    # ---------- additional tables ----------
+    # joint displacement table
+    try:
+        disp_data = displacements.tolist()
+    except Exception:
+        disp_data = [list(d) for d in displacements]
+    disp_rows = []
+    for idx, (ux, uy) in enumerate(disp_data):
+        disp_rows.append([node_list[idx]["label"], f"{ux:.3g}", f"{uy:.3g}"])
+
+    fig = plt.figure(figsize=(6, len(disp_rows)*0.3 + 1))
+    fig.suptitle('Joint Displacements')
+    tbl = plt.table(cellText=disp_rows,
+                    colLabels=['Node', 'Ux', 'Uy'],
+                    loc='center')
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(10)
+    plt.axis('off')
+    plt.show()
+
+    # support reaction table
+    # highlight the support reactions' cells with the same color as the support arrows in the plot
+    if restr is not None:
+        react_rows = []
+        for i in range(len(nodes)):
+            if restr[2*i][0] == 1:
+                rx = forces_by_node[i][0]
+            else:
+                rx = 0
+            if restr[2*i+1][0] == 1:
+                ry = forces_by_node[i][1]
+            else:
+                ry = 0
+            react_rows.append([node_list[i]["label"], f"{rx:.3g}", f"{ry:.3g}"])
+        fig = plt.figure(figsize=(6, len(react_rows)*0.3 + 1))
+        fig.suptitle('Support Reactions')
+        tbl = plt.table(cellText=react_rows,
+                        colLabels=['Node', 'Rx', 'Ry'],
+                        loc='center')
+        tbl.auto_set_font_size(False)
+        tbl.set_fontsize(10)
+        plt.axis('off')
+        plt.show()
+
+    # member axial force table
+    try:
+        nf_data = normal_forces.tolist()
+    except Exception:
+        nf_data = [list(nf) for nf in normal_forces]
+    force_rows = []
+    for idx, f in enumerate(nf_data):
+        # assume scalar in first position
+        val = f[0]
+        force_rows.append([elem_list[idx]["label"], f"{val:.3g}"])
+    fig = plt.figure(figsize=(6, len(force_rows)*0.3 + 1))
+    fig.suptitle('Member Axial Forces (+ tension / - compression)')
+    tbl = plt.table(cellText=force_rows,
+                    colLabels=['Element', 'Axial Force'],
+                    loc='center')
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(10)
+    plt.axis('off')
     plt.show()
