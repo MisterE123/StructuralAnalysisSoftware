@@ -53,7 +53,7 @@ def check_stable(S_ff):
     """
     try:
         np.linalg.cholesky(S_ff)
-    except np.LinAlgError:
+    except np.linalg.LinAlgError:
         raise ValueError("Truss Is Unstable")
 
 def element_global_stiffness(nodes, elem, elast, areas):
