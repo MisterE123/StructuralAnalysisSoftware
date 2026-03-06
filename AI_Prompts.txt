@@ -358,7 +358,7 @@ Prompt 10:
 Prompt 11:
     Purpose:
         adjust color display
-    Prompt: (the code graph_truss.py). Fix the legend and any color issue
+    Prompt 1: (the code graph_truss.py). Fix the legend and any color issue
     Prompt 2: make the legend describe tension, ZFM, and compression, and displaced nodes as well as all the other color codes
     Prompt 3: Make the plot itself use the following greys instead of black and grey for outlines and text:
     
@@ -377,3 +377,8 @@ Prompt 11:
     Prompt 5: make it report 3 sig figs
     Suggested: changes to the graph_truss.py ai generated graphing script
     Accepted: (in-line code suggestions)
+
+Prompt 12:
+    Purpose: visualization improvements
+    Prompts: scale the force quivers according to the force scale parameter, and the truss graph zoom according to its parameter?
+    

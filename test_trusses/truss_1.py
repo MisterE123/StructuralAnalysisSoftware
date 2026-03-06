@@ -99,7 +99,7 @@ def main():
      # Run analysis and get results
 
     ret = m.run_analysis(debug=True) # debug = True will print all intermediate data. 
-    plot(ret, exaggeration=100) # exaggeration is a multiplier to make the displacements visually distinct
+    plot(ret, exaggeration=100, force_visual_scale = .5, zoom_factor = .8) # exaggeration is a multiplier to make the displacements visually distinct
 
 if __name__ == "__main__":
     main()
