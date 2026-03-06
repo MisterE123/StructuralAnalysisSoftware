@@ -1,6 +1,6 @@
 stiffness_matrix.py implements a truss solver api.
 graph_truss.py implements a visualization of the results of the solver.
-the test_trusses folder represents usage of the api.
+The test_trusses folder represents usage of the api.
 
 Installation:
 
@@ -15,3 +15,6 @@ run stiffness_matrix.py directly.
 
 enter the test_trusses folder and run any of the three example test trusses
     This will solve each test truss, and display the results using the graph_truss script
+
+Use the stiffness_matrix.py as an importable library.
+    The test_trusses folder contains 3 examples of usage.
