@@ -380,5 +380,9 @@ Prompt 11:
 
 Prompt 12:
     Purpose: visualization improvements
-    Prompts: scale the force quivers according to the force scale parameter, and the truss graph zoom according to its parameter?
-    
+    Prompts: 
+        scale the force quivers according to the force scale parameter, and the truss graph zoom according to its parameter?
+        You are using restr, which is a binary " is this dof restrained". You should be using forces by node
+        (referenced lns 119 to 159) you are using restr here which is incorrect. restr only indicates if the dof is restrained. You should make the length of the arrow based on the force magnitude
+    Accepted: improvements to graph_truss.py listed in commit 66014bcb928ec35afae36ab8649d7bbcc665fb6e
+    verification: checked visual output.
