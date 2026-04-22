@@ -513,8 +513,56 @@ def beam2():
     None.
 
     """
+    # [x_pos,y_pos (always 0)]
+    nodes = np.array([[0,0],    # n1, in
+                      [48,0],   # n2, in
+                      [120,0],  # n3, in
+                      [180,0]]) # n4, in
     
-    pass
+    # [node_beginning, node_end]
+    elem = np.array([[1,2],  # elem1
+                     [2,3],  # elem2
+                     [3,4]]) # elem3
+    
+    # length must be elem [Young's modulus]
+    elast = np.array([[29000],  # elem 1 elast, ksi
+                      [10000],  # elem 2 elast, ksi
+                      [29000]]) # elem 3 elast, ksi
+    
+    inertia = np.array([[80],  # elem 1 inertia, in^4
+                        [70],  # elem 2 inertia, in^4
+                        [60]]) # elem 3 inertia, in^4
+    
+    # per dof restr
+    restr = np.array([[1], # node 1 vert restr
+                      [0], # node 1 angular restr
+                      [0], # node 2 vert restr
+                      [0], # node 2 angular restr
+                      [1], # node 3 vert restr
+                      [0], # node 3 angular restr
+                      [1], # node 4 vert restr
+                      [0]])# node 4 angular restr
+    
+    # per dof loads
+    app_loads = np.array([
+        [ 0],  # kip
+        [ 0],  # kip*in
+        [ 0],  # kip
+        [ 0],  # kip*in
+        [ 0],  # kip
+        [ 0],  # kip*in
+        [ 0],  # kip
+        [ 72]  # kip*in
+    ])
+    
+    w = np.array([[0.25,0.75],  # elem 1, kip/in
+                  [0.75,0],     # elem 2, kip/in
+                  [0,0]])       # elem 3, kip/in
+    
+    print("Running analysis of Beam 2...\n")
+    run_analysis(nodes, elem, elast, inertia, restr, app_loads, w, 5, True)
+
+
 def beam3():
     """
     Performs analysis of beam 3
@@ -524,7 +572,45 @@ def beam3():
     None.
 
     """
-    pass
+     # [x_pos,y_pos (always 0)]
+    nodes = np.array([[0,0],    # n1, in
+                      [96,0],   # n2, in
+                      [192,0]]) # n3, in
+    
+    # [node_beginning, node_end]
+    elem = np.array([[1,2],  # elem1
+                     [2,3]]) # elem2
+    
+    # length must be elem [Young's modulus]
+    elast = np.array([[29000],  # elem 1 elast, ksi
+                      [29000]]) # elem 2 elast, ksi
+    
+    inertia = np.array([[40],  # elem 1 inertia, in^4
+                        [80]]) # elem 2 inertia, in^4
+    
+    # per dof restr
+    restr = np.array([[0], # node 1 vert restr
+                      [0], # node 1 angular restr
+                      [1], # node 2 vert restr
+                      [0], # node 2 angular restr
+                      [0], # node 3 vert restr
+                      [0]])# node 3 angular restr
+
+# per dof loads
+    app_loads = np.array([
+        [ -6], # kip
+        [ 0],  # kip*in
+        [ 0],  # kip
+        [ 0],  # kip*in
+        [ -6], # kip
+        [ 0]]) # kip*in
+    
+    w = np.array([[0,0],  # elem 1, kip/in
+                  [0,0]]) # elem 2, kip/in
+    
+    
+    print("Running analysis of Beam 3...\n")
+    run_analysis(nodes, elem, elast, inertia, restr, app_loads, w, 5, True)
 
 def beam_example():
     # [x_pos,y_pos (always 0)]
