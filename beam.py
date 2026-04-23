@@ -415,13 +415,19 @@ def make_report(nodes, elem, df, restr, scale, Pr, units, title):
     -------
     None
     """
-    
-    m = len(elem)
+    # check stability
+    #a roller is the same as a pin for beams, but should be given 2 reactions
     r = len(Pr)
+
+    for yrest in restr[0:len(restr):2]:
+        if yrest[0] == 1:
+            r+=1
+            
+    m = len(elem)
     j = len(nodes)
     h = 0
     n = stability(m,r,j,h)
-    
+    #print("m: ",m," r: ",r," j: ",j," n: ", n)    
     
     
     elem = elem - 1
@@ -516,7 +522,6 @@ def make_report(nodes, elem, df, restr, scale, Pr, units, title):
         else:
             # there will be a force reaction
             react = (Pr[Pr_idx][0])
-            print(react)
             react_table_data.append([str(nidx+1),f"{react:.3g}", "["+units["force"]+"]"])
             Pr_idx += 1
             
@@ -528,7 +533,6 @@ def make_report(nodes, elem, df, restr, scale, Pr, units, title):
         else: 
             # there will be a moment reaction
             react = (Pr[Pr_idx][0])
-            print(react)
             react_table_data.append([str(nidx+1),f"{react:.3g}", "["+units["force"]+"⋅"+units["length"]+"]"])
             Pr_idx += 1
 
@@ -565,11 +569,6 @@ def make_report(nodes, elem, df, restr, scale, Pr, units, title):
         ve=dof_defl[el[1]*2]
         te=dof_defl[el[1]*2+1]
         
-        # print("vb:",vb)
-        # print("tb:",tb)
-        # print("ve:",ve)
-        # print("te:",te)
-        
         shape = shape_N1(x,x1,x2)*vb+shape_N2(x,x1,x2)*tb+shape_N3(x,x1,x2)*ve+shape_N4(x,x1,x2)*te
         
         de_beam_diagram = deflect_dia.plot(x,shape, color = "black")
@@ -591,7 +590,7 @@ def make_report(nodes, elem, df, restr, scale, Pr, units, title):
     
     deformed_title = title + " Deformed Shape"
     if n==-1:
-        deformed_title +="\n(UNSTABLE)"
+        deformed_title +="\n(UNSTABLE - DO NOT TRUST!)"
     plt.title(deformed_title)
 
     plt.show()
