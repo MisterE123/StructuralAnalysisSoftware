@@ -707,7 +707,7 @@ def beam1():
     """
     # [x_pos,y_pos (always 0)]
     nodes = np.array([[0,0],  # n1
-                      [3,0]]) # n2
+                      [3000,0]]) # n2
     
     # [node_beginning, node_end]
     elem = np.array([[1,2]]) # elem1
@@ -730,8 +730,9 @@ def beam1():
         [ 0]   # kN*mm
         ])
     
-    w = np.array([[0,0],
-                  [0,0]])
+    w1=8/1000
+    w = np.array([[w1,w1],
+                  [w1,w1]])
     
    
     print("Running analysis of Beam 1...\n")
@@ -742,7 +743,7 @@ def beam1():
                  restr, 
                  app_loads, 
                  dist_loads = w, 
-                 scale = 2500000000, 
+                 scale = 250, 
                  units = {"length":"mm",
                           "force" :"kN",
                           "press" :"GPa"}, 
@@ -853,7 +854,7 @@ def beam3():
                       [0], # node 3 vert restr
                       [0]])# node 3 angular restr
 
-# per dof loads
+    # per dof loads
     app_loads = np.array([
         [ -6], # kip
         [ 0],  # kip*in
