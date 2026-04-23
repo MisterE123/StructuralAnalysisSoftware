@@ -6,6 +6,8 @@ Created on Thu Apr 16 18:40:15 2026
 """
 import numpy as np
 from matplotlib import pyplot as plt
+from matplotlib.ticker import FuncFormatter
+
 
 
 def beam_local_stiffness(nodes, elem, elast, inertia):
@@ -18,17 +20,14 @@ def beam_local_stiffness(nodes, elem, elast, inertia):
     Parameters
     ----------
     nodes : numpy (nnode × 2) matrix of node coordinates [X, Y ].
-    
-    elem : (nelem × 2) member connectivity [startNode, endNode].
-    
-    elast : (nelem × 1) elastic modulus per member.
-    
-    inertia : (nelem × 1) second moment of area per member.
+    elem : numpy (nelem × 2) member connectivity [startNode, endNode].
+    elast : numpy (nelem × 1) elastic modulus per member.
+    inertia : numpy (nelem × 1) second moment of area per member.
 
 
     Returns
     -------
-    Ks : (normal) list of numpy stiffness matricies.
+    Ks : list of numpy stiffness matricies.
 
     """
     num_elem = elem.shape[0]
@@ -67,21 +66,21 @@ def beam_local_stiffness(nodes, elem, elast, inertia):
 
 def beam_fixed_end_forces(nodes, elem, w):
     """
-    
 
     Parameters
     ----------
-    nodes : TYPE
-        DESCRIPTION.
-    elem : TYPE
-        DESCRIPTION.
-    w : TYPE
-        DESCRIPTION.
+    nodes : numpy (nnode × 2) matrix of node coordinates [X, Y ].
+    elem : numpy (nelem × 2) member connectivity [startNode, endNode].
+    w : numpy (nelem × 2) distributed loading. Positive loads are downwards
+        [startLoadIntensity, endLoadIntensity], in [Force/Length]
 
     Returns
     -------
-    Q_F : TYPE
-        DESCRIPTION.
+    Q_F : list of member numpy (4 × 1) element equivalent reactions from 
+    applied loads. [[dof_start_applied_reaction], #[Force]
+                    [dof_start_moment_reaction],  #[Force*Length]
+                    [dof_end_applied_reaction],   #[Force]
+                    [dof_end_moment_reaction]]    #[Force*Length]
 
     """
     num_elem = elem.shape[0]
@@ -140,19 +139,18 @@ def beam_fixed_end_forces(nodes, elem, w):
 
 def get_free_and_restr_idxs(restrained_dofs):
     """
-    
+    Returns free and restrained dofs as a list given the restrained dof
+    flag vector.
 
     Parameters
     ----------
-    restrained_dofs : TYPE
-        DESCRIPTION.
+    restrained_dofs : (ndof × 1) restraint indicator vector 
+    (1 = restrained, 0 = free).
 
     Returns
     -------
-    free_dof_idxs : TYPE
-        DESCRIPTION.
-    restr_dof_idxs : TYPE
-        DESCRIPTION.
+    free_dof_idxs : list of free dof indicies.
+    restr_dof_idxs : list of restrained dof indicies.
 
     """
     free_dof_idxs = []
@@ -168,38 +166,32 @@ def get_free_and_restr_idxs(restrained_dofs):
 
 def assemble_and_partition(K_members, Q_F, restrained_dofs, elem, app_loads):
     """
-    
+    Creates the assembled stiffness matricies and Equivalent fixed reaction
+    forces vector from the applied loads by assembling them from lists of the 
+    members' stiffness matricies and Equivalent fixed reaction forces vectors
 
     Parameters
     ----------
-    K_members : TYPE
-        DESCRIPTION.
-    Q_F : TYPE
-        DESCRIPTION.
-    restrained_dofs : TYPE
-        DESCRIPTION.
-    elem : TYPE
-        DESCRIPTION.
-    app_loads : TYPE
-        DESCRIPTION.
+    K_members : nelem length list of numpy (4 × 4) stiffness matricies
+    Q_F : list of member numpy (4 × 1) element equivalent reactions from 
+        applied loads. [[dof_start_applied_reaction], #[Force]
+                        [dof_start_moment_reaction],  #[Force*Length]
+                        [dof_end_applied_reaction],   #[Force]
+                        [dof_end_moment_reaction]]    #[Force*Length]
+    restrained_dofs : (ndof × 1) restraint indicator vector (1 = restrained, 0 = free).
+    elem : numpy (nelem × 2) member connectivity [startNode, endNode].
+    app_loads : (ndof × 1) applied nodal load vector (forces and/or moments at 
+        DOFs; set reactions to zero).
 
     Returns
     -------
-    S : TYPE
-        DESCRIPTION.
-    S_ff : TYPE
-        DESCRIPTION.
-    S_rf : TYPE
-        DESCRIPTION.
-    Peq : TYPE
-        DESCRIPTION.
-    Peqfree : TYPE
-        DESCRIPTION.
-    Peqrestr : TYPE
-        DESCRIPTION.
-    Q_fixed : TYPE
-        DESCRIPTION.
-
+    S : Full numpy (ndof × ndof) Stiffness Matrix.
+    S_ff : Free-Free (ndof_free × ndof_free) Stiffness Matrix.
+    S_rf : Restrained (ndof_restrained × ndof_free) Stiffness Matrix.
+    Peq : Equivalent loads (app_loads - Q_fixed).
+    Peqfree : numpy (ndof_free × 1) free dof loads from Peq.
+    Peqrestr : numpy (ndof_restr × 1) restrained dof loads from Peq.
+    Q_fixed : full numpy (ndof × 1) fixed reaction-equivalent vector.
     """
     elem = elem - 1
     ##
@@ -293,19 +285,17 @@ def assemble_and_partition(K_members, Q_F, restrained_dofs, elem, app_loads):
 
 def get_free_displacements(Sff, Peqf):
     """
-    
+    Gets the displacements at free degrees of freedom
 
     Parameters
     ----------
-    Sff : TYPE
-        DESCRIPTION.
-    Peqf : TYPE
-        DESCRIPTION.
+    S_ff : Free-Free (ndof_free × ndof_free) Stiffness Matrix.
+
+    Peqf : numpy (ndof_free × 1) free dof loads from Peq.
 
     Returns
     -------
-    df : TYPE
-        DESCRIPTION.
+    df : (ndof_free × 1) displacement vector.
 
     """
     
@@ -315,41 +305,161 @@ def get_free_displacements(Sff, Peqf):
 
 def get_support_rxns(S_rf,df,Peqr):
     """
+    Gets support reactions at restrained dofs
     
     Parameters
     ----------
-    S_rf : TYPE
-        DESCRIPTION.
-    df : TYPE
-        DESCRIPTION.
-    Peqr : TYPE
-        DESCRIPTION.
+    S_rf : Restrained (ndof_restrained × ndof_free) Stiffness Matrix.
+    df : (ndof_free × 1) displacement vector.
+    Peqr : numpy (ndof_restr × 1) restrained dof loads from Peq.
 
     Returns
     -------
-    Pr : TYPE
-        DESCRIPTION.
-
+    Pr : numpy (ndof_restr × 1) restrained dof reactions
+# 
     """
     Pr = S_rf@df + Peqr
     return Pr
 
+def make_node(axe,x,y,rot,color,size):
+    """
+    
+    Draws a beam node with given parameters on a plot Axe
+    Parameters
+    ----------
+    axe : Plot Axes.
+    x : Plot x pos.
+    y : Plot x pos.
+    rot : node rotation [rad].
+    color : node color.
+    size : node size.
 
+    Returns
+    -------
+    None.
 
+    """
+    rot = (rot * (180/3.14159))-45
+    axe.plot(x,y,
+             color = color,
+             markersize = size,
+             marker = (4,0,rot))
 
-def make_report(nodes, elem, df, restr, scale, Pr):
+def shape_N1(x,x1,x2):
+    """
+    Gives the unit deflection along the beam due to the first dof
+
+    Parameters
+    ----------
+    x : linspace list along beam.
+    x1 : first value.
+    x2 : end value.
+
+    Returns
+    -------
+    linspace of unit deflection along beam.
+    """
+    L = x2-x1
+    return (1-(3*((x-x1)/L)**2)+(2*((x-x1)/L)**3))
+    
+def shape_N2(x,x1,x2):
+    L = x2-x1
+    return ((x-x1)*(1-((x-x1)/L))**2)
+
+def shape_N3(x,x1,x2):
+    L = x2-x1
+    return ((3*((x-x1)/L)**2)-(2*((x-x1)/L)**3))
+
+def shape_N4(x,x1,x2):
+    L = x2-x1
+    return ((((x-x1)**2)/L)*(-1+(x-x1)/L))
+
+def stability(m,r,j,h):
+    """
+    Returns the n of indeterminancy or -1 if unstable.
+
+    Parameters
+    ----------
+    m : int, # members.
+    r : int, # reactions (restrained dofs).
+    j : int, # joints.
+    h : int, # hinges.
+
+    Returns
+    -------
+    int, -1 if unstable, 0 if determinant, >0 if indeterminant.
+    """
+    return max(-1,3*m+r-3*j-h)
+
+def make_report(nodes, elem, df, restr, scale, Pr, units, title):    
+    """
+    Creates labeled deformed shape graph, displacement table, 
+    and reactions table.
+
+    Parameters
+    ----------
+    nodes : numpy (nnode × 2) matrix of node coordinates [X, Y ].
+    elem : numpy (nelem × 2) member connectivity [startNode, endNode].
+    df : numpy (ndof_free × 1) deflections .
+    restr :(ndof × 1) restraint indicator vector (1 = restrained, 0 = free).
+    scale : visual displacement scale multiplier (graph units remain accurate).
+    Pr : numpy (ndof_restr × 1) restrained dof reactions
+    units : unit dictionary: {"length":"mm",
+                              "force" :"kN",
+                              "press" :"GPa"}
+        Pressure must be (Force / Length^2)
+        Used for labels. 
+    title : (str) Beam title.
+
+    Returns
+    -------
+    None
+    """
+    
+    m = len(elem)
+    r = len(Pr)
+    j = len(nodes)
+    h = 0
+    n = stability(m,r,j,h)
+    
+    
+    
     elem = elem - 1
+    num_nodes = int(np.max(elem)) + 1
+    ndof = 2 * num_nodes
+    df = df * scale
+    
     # make a report that shown inputs, outputs, and uses the shape
     # functions to show the deformed shape
-    fig, ax = plt.subplots() # create a figure containing a single Axes.
+    fig, deflect_dia = plt.subplots() # create a figure containing a single Axes.
+
+    # calculate the plot bounds
+    max_x = max(nodes[:,...,0])
+    min_x = min(nodes[:,...,0])
+    xrange = (max_x - min_x)
+    x_pad = xrange/10
+    label_offset = (xrange+2*x_pad)/100
+    #deflect_dia = axs[0]
     
     # First, plot the original shape and problem.
     # plot the nodes
+
+    text_size = 5
     
     for nidx in range(len(nodes)):
-        ax.plot(nodes[nidx][0],nodes[nidx][1],"s",color='grey')
-        ax.text(nodes[nidx][0],nodes[nidx][1], "  "+str(nidx+1), color = "darkslategrey")
+        make_node(deflect_dia,nodes[nidx][0],nodes[nidx][1],0,"grey",text_size)
+        deflect_dia.text(nodes[nidx][0]+2*label_offset,
+                nodes[nidx][1]+2*label_offset, 
+                str(nidx+1), 
+                color = "grey", 
+                size = text_size,
+                weight = "bold",
+                bbox = dict(boxstyle="circle", fc = "none", ec = "grey")
+                )
+        # TODO: check if restrained, draw appropriate restraints
         
+    unde_beam_diagram = 0 # just declaring
+    
     for eidx in range(len(elem)):
         el = elem[eidx]
         el_node_start_x = nodes[el[0]][0]
@@ -361,33 +471,154 @@ def make_report(nodes, elem, df, restr, scale, Pr):
         elem_x_vals = np.linspace(el_node_start_x,el_node_end_x,100)
         elem_y_vals = np.linspace(el_node_start_y,el_node_end_y,100)
         
-        ax.plot(elem_x_vals,elem_y_vals, color = "grey")
+        # plot the undeformed member
+        unde_beam_diagram = deflect_dia.plot(elem_x_vals,elem_y_vals, color = "grey")
         
+        label_x = ((el_node_end_x+el_node_start_x)/2)
+        label_y = ((el_node_end_y+el_node_start_y)/2)+3*label_offset
+        deflect_dia.text(label_x,label_y," "+str(eidx+1)+" ",
+                color = "grey",
+                size = text_size,
+                weight = "bold",
+                bbox = dict(boxstyle="square", fc = "none", ec = "grey"))
     
     # graph the deformed shape
     restr_idx = 0
+    Pr_idx = 0
+    dof_defl = np.zeros(ndof)
+    
+    disp_data_titles = ["Node", "Vert Disp ["+units["length"]+"]", "Rot [rad]"]
+
+    disp_table_data = [
+        disp_data_titles,
+    ]
+    
+    react_data_titles = ["Node","Reaction","Units"]
+    
+    react_table_data = [
+        react_data_titles,
+    ]
+    
     for nidx in range(len(nodes)):
         rot = 0
         nx = nodes[nidx][0]
         ny = nodes[nidx][1]
+        
+        dfy = 0
+        dfrot = 0
+
         if restr[nidx*2][0]==0:
             # disp is unrestrained
-            ny += df[restr_idx]
-        for dof in [nidx*2,nidx*2+1]:
-            if restr[dof][0]==0:
-                # it is unrestrained
-                rot += df[restr_idx]
-                
-                
-                
+            dfy = df[restr_idx][0]
+            ny += dfy
             
+            restr_idx += 1
+        else:
+            # there will be a force reaction
+            react = (Pr[Pr_idx][0])
+            print(react)
+            react_table_data.append([str(nidx+1),f"{react:.3g}", "["+units["force"]+"]"])
+            Pr_idx += 1
+            
+        if restr[nidx*2+1][0]==0:
+            # rot is unrestrained
+            dfrot = df[restr_idx][0]
+            rot += dfrot
+            restr_idx += 1
+        else: 
+            # there will be a moment reaction
+            react = (Pr[Pr_idx][0])
+            print(react)
+            react_table_data.append([str(nidx+1),f"{react:.3g}", "["+units["force"]+"⋅"+units["length"]+"]"])
+            Pr_idx += 1
+
+        
+        make_node(deflect_dia,nx,ny,rot,"black",text_size)
+
+        dof_defl[nidx*2] = dfy
+        dof_defl[nidx*2+1]=dfrot
+        
+        disp_table_data.append([str(nidx+1),f"{(dfy/scale):.3g}",f"{(dfrot/scale):.3g}"])
+        
+    
+    de_beam_diagram = 0
+    
+    for eidx in range(len(elem)):
+        el = elem[eidx]
+        
+        el_node_start_x = nodes[el[0]][0]
+        el_node_start_y = nodes[el[0]][1]
+
+        el_node_end_x = nodes[el[1]][0]
+        el_node_end_y = nodes[el[1]][1]
+        
+        elem_x_vals = np.linspace(el_node_start_x,el_node_end_x,100)
+        elem_y_vals = np.linspace(el_node_start_y,el_node_end_y,100)
+        
+        
+        x = np.linspace(el_node_start_x,el_node_end_x,100)
+        x1 = el_node_start_x
+        x2 = el_node_end_x
+        
+        vb=dof_defl[el[0]*2]
+        tb=dof_defl[el[0]*2+1]
+        ve=dof_defl[el[1]*2]
+        te=dof_defl[el[1]*2+1]
+        
+        # print("vb:",vb)
+        # print("tb:",tb)
+        # print("ve:",ve)
+        # print("te:",te)
+        
+        shape = shape_N1(x,x1,x2)*vb+shape_N2(x,x1,x2)*tb+shape_N3(x,x1,x2)*ve+shape_N4(x,x1,x2)*te
+        
+        de_beam_diagram = deflect_dia.plot(x,shape, color = "black")
+        
+
+    deflect_dia.set_xbound(min_x-x_pad, max_x + x_pad)      
+    deflect_dia.set_aspect(1, adjustable='datalim')    
+    # deflect_dia.set_ybound(-y_range,y_range)
+
+    deflect_dia.yaxis.set_major_formatter(
+        FuncFormatter(lambda y, _: f"{y/scale:.3g}")
+    )
+    
+    deflect_dia.set_xlabel("["+units["length"]+"]")
+    deflect_dia.set_ylabel("["+units["length"]+"]")
+    
+    deflect_dia.legend([unde_beam_diagram[0], de_beam_diagram[0]],
+              ['Undeflected', 'Deflected ('+str(f"{(scale):.3g}")+'x)'])
+    
+    deformed_title = title + " Deformed Shape"
+    if n==-1:
+        deformed_title +="\n(UNSTABLE)"
+    plt.title(deformed_title)
+
+    plt.show()
+    
+    # make the tables
+    
+    
+    fig2, defl_chart = plt.subplots() # create a figure containing a single Axes.
+    defl_chart.axis('off')  # hide axes
+    table = defl_chart.table(cellText=disp_table_data, loc='center')
+    table.scale(1, 1.5)
+    plt.title(title + " Displacements")
     plt.show()
     
     
-    
-    pass
+    fig3, react_chart = plt.subplots()
+    react_chart.axis('off')  # hide axes
+    react_table = react_chart.table(cellText=react_table_data, loc='center')
+    react_table.scale(1, 1.5)
+    plt.title(title + " Reactions")
+    plt.show()
 
-def run_analysis(nodes,elem,elast,inertia,restr,app_loads,w,scale, debug):
+    
+    
+    
+def run_analysis(nodes,elem,elast,inertia,restr,
+                 app_loads,dist_loads,scale, units, debug, title):
     """
     Runs Direct Stiffness Analysis of a beam. Performs analysis then
     graphs and prints results
@@ -417,6 +648,9 @@ def run_analysis(nodes,elem,elast,inertia,restr,app_loads,w,scale, debug):
     
     debug: print debug info.
     
+    title : (str) Beam title.
+    
+    
     Returns
     -------
     None.
@@ -425,7 +659,7 @@ def run_analysis(nodes,elem,elast,inertia,restr,app_loads,w,scale, debug):
     # Compute the element stiffness matrices
     K_members = beam_local_stiffness(nodes, elem, elast, inertia)
     # Compute the equivalent nodal load vectors for distributed loads
-    Q_F = beam_fixed_end_forces(nodes, elem, w)
+    Q_F = beam_fixed_end_forces(nodes, elem, dist_loads)
     # Assemble and partition
     S, S_ff, S_rf, Peq, Peqf, Peqr, Q_fixed = assemble_and_partition(K_members, 
                                                             Q_F, 
@@ -436,7 +670,7 @@ def run_analysis(nodes,elem,elast,inertia,restr,app_loads,w,scale, debug):
     
     Pr = get_support_rxns(S_rf, df, Peqr)
     
-    make_report(nodes,elem,df,restr,scale,Pr)
+    make_report(nodes, elem, df, restr, scale, Pr, units, title)
     
     if debug:
         
@@ -493,15 +727,28 @@ def beam1():
     app_loads = np.array([
         [ 0],  # kN
         [ 0],  # kN*mm
-        [-4], # kN
+        [-4],  # kN
         [ 0]   # kN*mm
         ])
     
     w = np.array([[0,0],
                   [0,0]])
     
+   
     print("Running analysis of Beam 1...\n")
-    run_analysis(nodes, elem, elast, inertia, restr, app_loads, w, 5, True)
+    run_analysis(nodes, 
+                 elem, 
+                 elast, 
+                 inertia, 
+                 restr, 
+                 app_loads, 
+                 dist_loads = w, 
+                 scale = 2500000000, 
+                 units = {"length":"mm",
+                          "force" :"kN",
+                          "press" :"GPa"}, 
+                 debug = True,
+                 title = "Beam 1")
     
 
 def beam2():
@@ -513,7 +760,6 @@ def beam2():
     None.
 
     """
-    # [x_pos,y_pos (always 0)]
     nodes = np.array([[0,0],    # n1, in
                       [48,0],   # n2, in
                       [120,0],  # n3, in
@@ -555,15 +801,27 @@ def beam2():
         [ 72]  # kip*in
     ])
     
-    w = np.array([[0.25,0.75],  # elem 1, kip/in
-                  [0.75,0],     # elem 2, kip/in
-                  [0,0]])       # elem 3, kip/in
+    dist_loads = np.array([[0.25,0.75],  # elem 1, kip/in
+                           [0.75,0],     # elem 2, kip/in
+                           [0,0]])       # elem 3, kip/in
     
     print("Running analysis of Beam 2...\n")
-    run_analysis(nodes, elem, elast, inertia, restr, app_loads, w, 5, True)
-
-
+    run_analysis(nodes, 
+                 elem, 
+                 elast, 
+                 inertia, 
+                 restr, 
+                 app_loads, 
+                 dist_loads, 
+                 scale = 25,
+                 units = {"length":"in",
+                          "force" :"kip",
+                          "press" :"ksi"}, 
+                 debug = True,
+                 title = "Beam 2")
+    
 def beam3():
+
     """
     Performs analysis of beam 3
 
@@ -605,12 +863,24 @@ def beam3():
         [ -6], # kip
         [ 0]]) # kip*in
     
-    w = np.array([[0,0],  # elem 1, kip/in
-                  [0,0]]) # elem 2, kip/in
+    dist_loads = np.array([[0,0],  # elem 1, kip/in
+                           [0,0]]) # elem 2, kip/in
     
     
     print("Running analysis of Beam 3...\n")
-    run_analysis(nodes, elem, elast, inertia, restr, app_loads, w, 5, True)
+    run_analysis(nodes, 
+                 elem, 
+                 elast, 
+                 inertia, 
+                 restr, 
+                 app_loads, 
+                 dist_loads = dist_loads, 
+                 scale = 5, 
+                 units = {"length":"in",
+                          "force" :"kip",
+                          "press" :"ksi"},
+                 debug = True,
+                 title = "Beam 3")
 
 def beam_example():
     # [x_pos,y_pos (always 0)]
@@ -647,11 +917,23 @@ def beam_example():
                         [ 0]])  # 6 # kip*in
         
     
-    w = np.array([[0.25,0.25],  # elem1 kip/in, s, e
-                  [0   ,0   ]]) # elem2 kip/in, s, e
+    dist_loads = np.array([[0.25,0.25],  # elem1 kip/in, s, e
+                           [0   ,0   ]]) # elem2 kip/in, s, e
     
     print("Running analysis of Beam Example...\n")
-    run_analysis(nodes, elem, elast, inertia, restr, app_loads, w, 5, True)
+    run_analysis(nodes, 
+                 elem, 
+                 elast, 
+                 inertia, 
+                 restr, 
+                 app_loads, 
+                 dist_loads, 
+                 scale = 25,
+                 units = {"length":"in",
+                          "force" :"kip",
+                          "press" :"ksi"},
+                 debug = True,
+                 title = "Beam Example")
     
 
 def main():
@@ -663,7 +945,9 @@ def main():
     None.
 
     """
-    beam_example()
+    beam1()
+    beam2()
+    beam3()
 
 if __name__ == "__main__":
     raise SystemExit(main())
