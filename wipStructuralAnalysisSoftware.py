@@ -12,7 +12,6 @@ def check_stable(S_ff):
     on the free-free stiffness matrix S_ff. If S_ff is not positive definite, it
     raises a ValueError indicating that the structure is unstable.
     """
-    pass
     try:
         np.linalg.cholesky(S_ff)
 
@@ -142,7 +141,7 @@ def element_global_stiffness(elem, elast, areas, inertia, pins, T_list, L_list):
         # T is a 6x6 transformation matrix that transforms local element stiffness matrices to global coordinates.
         T = T_list[m] 
         TT = T.T
-        print("k_local ",m,": ",k_local)
+        # print("k_local ",m,": ",k_local)
         K_m = TT @ k_local @ T #local transformed to global
         
         K_list.append(K_m)
@@ -155,14 +154,14 @@ def element_global_stiffness(elem, elast, areas, inertia, pins, T_list, L_list):
 def get_free_and_restr_idxs(restrained_dofs):
     free_dof_idxs = []
     restr_dof_idxs = []
-    print(restrained_dofs)
+    # print(restrained_dofs)
     for dof_idx in range((restrained_dofs.shape[0])):
 
         if restrained_dofs[dof_idx][0] == 1:
             restr_dof_idxs.append(dof_idx)
         else:
             free_dof_idxs.append(dof_idx)
-        print(free_dof_idxs)
+        # print(free_dof_idxs)
     return free_dof_idxs, restr_dof_idxs
 
 def get_member_dofs(i, j):
@@ -231,13 +230,13 @@ def assemble_and_partition_stiffness(K_members, restr, elem):
     # delete restrained cols leaving free
     S_ff = np.delete(temp_arr, restr_dof_idxs, axis=1) 
     # delete free rows leaving restr
-    print(np.shape(S))
+    # print(np.shape(S))
     temp_arr_2 = np.delete(S, free_dof_idxs, axis=0) 
     # delete restrained cols leaving free
     S_rf = np.delete(temp_arr_2, restr_dof_idxs, axis=1) 
     # we now have S, S_ff, and S_rf
-    print("S_ff:" , S_ff)
-    print("S_rf:",S_rf)
+    # print("S_ff:" , S_ff)
+    # print("S_rf:",S_rf)
     return S, S_ff, S_rf
 
 def get_equivalent_nodal_loads_list(w, p, elem, L_list, T_list, pins):
@@ -395,9 +394,9 @@ def assemble_and_partition_loads(app_loads, Qf_list, restr, elem):
 
     app_loads_free = np.delete(app_loads, restr_dof_idxs, axis=0)
     app_loads_restr = np.delete(app_loads, free_dof_idxs, axis=0)
-    print(f"restrained_dofs: {restr_dof_idxs}")
-    print(f"app_loads_free: {app_loads_free}")
-    print(f"app_loads: {app_loads}")
+    # print(f"restrained_dofs: {restr_dof_idxs}")
+    # print(f"app_loads_free: {app_loads_free}")
+    # print(f"app_loads: {app_loads}")
 
     # to build the fixed free load vector, we will start with an ndof vector, add the     
     # equivalent nodal loads for the distributed loads, and then delete the restrained dofs
@@ -524,7 +523,7 @@ def make_report(nodes, elem, pins, original_pins, T_list, L_list, restr,
     ndof = 3 * num_nodes
     df = df * scale
 
-    disp_data_titles = ["Node", "Vert Disp ["+units["length"]+"]", "Rot [rad]"]
+    disp_data_titles = ["Node", "Horiz Disp ["+units["length"]+"]","Vert Disp ["+units["length"]+"]", "Rot [rad]"]
 
     disp_table_data = [
         disp_data_titles,
@@ -620,6 +619,7 @@ def make_report(nodes, elem, pins, original_pins, T_list, L_list, restr,
             # disp y is unrestrained
             dfy = df[restr_idx][0]
             ny += dfy
+            restr_idx += 1
         else:
             # there will be a vertical force rxn
             react = (Pr[Pr_idx][0])
@@ -645,7 +645,7 @@ def make_report(nodes, elem, pins, original_pins, T_list, L_list, restr,
         dof_pos[nidx*3+1] = ny
         dof_pos[nidx*3+2]= rot
         
-        disp_table_data.append([str(nidx+1),f"{(dfy/scale):.5g}",f"{(dfrot/scale):.5g}"])
+        disp_table_data.append([str(nidx+1),f"{(dfx/scale):.5g}",f"{(dfy/scale):.5g}",f"{(dfrot/scale):.5g}"])
         
     for eidx in range(len(elem)):
         el = elem[eidx]
@@ -793,8 +793,8 @@ def run_analysis(nodes, elem, elast, areas, inertia, restr, pins,
     if weld_free_pins:
         
         pins, truss_nodes = weld_all_free_pins(nodes, elem, pins)
-        print("pins:")
-        print(pins)
+        # print("pins:")
+        # print(pins)
 
     # get the dX, dY, and L for each element which are common properties for the member
     # calculations, so we only want to compute them once.
@@ -805,12 +805,12 @@ def run_analysis(nodes, elem, elast, areas, inertia, restr, pins,
     T_list = element_transformation(nodes, elem, dX_list, dY_list, L_list)
     # create the global stiffness matrix for each element in global coordinates.
     K_list = element_global_stiffness(elem, elast, areas, inertia, pins, T_list, L_list)
-    print("T_list[0]:\n", T_list[0])
-    print("K_list[0]:\n", K_list[0])
+    # print("T_list[0]:\n", T_list[0])
+    # print("K_list[0]:\n", K_list[0])
     S, S_ff, S_rf = assemble_and_partition_stiffness(K_list, restr, elem)
-    print("S_ff:")
-    np.set_printoptions(precision=5)
-    print(S_ff)
+    # print("S_ff:")
+    # np.set_printoptions(precision=5)
+    # print(S_ff)
     if not solve_pseudo:
         check_stable(S_ff)
     # get the equivalent nodal loads for the distributed loads
@@ -821,19 +821,21 @@ def run_analysis(nodes, elem, elast, areas, inertia, restr, pins,
         fixed_distributed_loads_restr, \
         app_loads_restr = \
         assemble_and_partition_loads(app_loads, Qf_list, restr, elem)
-    print("app_loads_free:\n", app_loads_free)
-    print("app_loads_restr:\n", app_loads_restr)
-    print("fixed_distributed_loads_free:\n", fixed_distributed_loads_free)
-    print("fixed_distributed_loads_restr:\n", fixed_distributed_loads_restr)
+    # print("app_loads_free:\n", app_loads_free)
+    # print("app_loads_restr:\n", app_loads_restr)
+    # print("fixed_distributed_loads_free:\n", fixed_distributed_loads_free)
+    # print("fixed_distributed_loads_restr:\n", fixed_distributed_loads_restr)
     # solve
     displacements_free = solve_displacements(S_ff, app_loads_free, fixed_distributed_loads_free, solve_pseudo)
     # solve for reactions
     # $$R_{support} = K_{rf} D_f + Q_{rf} - P_r$$
     reactions_restr = solve_reactions(S_rf, displacements_free, fixed_distributed_loads_restr, app_loads_restr)
-    print("Free Displacements:")
-    print(displacements_free)
-    print("Restrained Reactions:")
-    print(reactions_restr)
+    # print("Free Displacements:")
+    # print(displacements_free)
+    # print("Restrained Reactions:")
+    # print(reactions_restr)
+    # print("S_ff:")
+    # print(S_ff)
     make_report(nodes=nodes,
                 elem=elem,
                 pins=pins,
@@ -1125,7 +1127,7 @@ def Beam_2():
     
     elast = get_elem_const_array(10000, elem)
     inertia = get_elem_const_array(50, elem)
-    areas = get_elem_const_array(100, elem) 
+    areas = get_elem_const_array(math.sqrt(12*50), elem) 
     pins = get_no_pins(elem)
     
     # Node 1: Pin, Node 3: Roller
@@ -1138,375 +1140,161 @@ def Beam_2():
     restr = nodal_to_dof(restr_by_node)
     
     w= np.array([
-            [0,0],
-            [0,2.27],
-            [2.27,5]
+            [0,   0   ],
+            [0,   .1893939],
+            [.1893939,.41666667   ]
         ])
-    w*=(-1/12)
+    
 
     app_loads = nodal_to_dof(np.zeros((4, 3)))
-    print(app_loads)
     p = get_elem_const_array(0, elem)
     
     run_analysis(nodes=nodes, elem=elem, elast=elast, areas=areas, 
                  inertia=inertia, restr=restr, pins=pins, 
                  app_loads=app_loads, w=w, p=p, scale=1,
                  units={"length": "in", "force": "kip"})
-# def frame1():
-
-#     nodes = np.array([  [ 0, 0], # Node 1 X Y
-#                         [ 2, 4],
-#                         [ 6, 4],
-#                         [12, 0]])
-    
-#     elem = np.array([   [1,2],
-#                         [2,3],
-#                         [3,4]])
-    
-#     elast = np.array([  [101*10**6],
-#                         [101*10**6],
-#                         [101*10**6]])
-    
-#     areas = np.array([  [200],
-#                         [200],
-#                         [200]])
-    
-#     inertia = np.array([[5*10**6],
-#                         [5*10**6],
-#                         [5*10**6]])
-    
-#     restr_by_node = np.array([[1,1,0], 
-#                               [0,0,0],
-#                               [0,0,0],
-#                               [1,1,0]])
-    
-#     restr = nodal_to_dof(restr_by_node)
-
-#     pins = np.array([   [0,0], # elem 1 start pinned=1, elem 1 end
-#                         [0,0],
-#                         [0,0]])
-    
-#     app_loads_by_node = np.array([  [ 0, 0, 0], #Node 1 Load X, Y, Theta
-#                                     [10, 0, 0], 
-#                                     [ 0, 0, 0], 
-#                                     [ 0, 0, 0]])
-    
-#     app_loads = nodal_to_dof(app_loads_by_node)
-    
-#     w = np.array([  [0,0], # elem 1 intens_s, intens_e
-#                     [10/1000,10/1000],
-#                     [0,0]])
-    
-#     #p is the axial load intensity per member
-#     p = np.array([[0],
-#                   [0],
-#                   [0]])
-    
-#     run_analysis(nodes = nodes, 
-#                     elem = elem, 
-#                     elast = elast, 
-#                     areas = areas, 
-#                     inertia = inertia, 
-#                     restr = restr, 
-#                     pins = pins, 
-#                     app_loads = app_loads, 
-#                     w = w,
-#                     p = p
-#                 )
-    
-# def ex_6_7():
-#     nodes = np.array([  [0, 0], # Node 1 X Y, m
-#                         [9, 0],
-#                         [0, 6],
-#                         [9, 6],
-#                         [0, 12]])
-#     # nodes *= 1000 # convert to mm
-    
-#     elem = np.array([   [1,3], # elem 1 start node idx, elem 1 end node idx, 1 based idx
-#                         [2,4],
-#                         [3,5],
-#                         [3,4],
-#                         [4,5]])
-    
-#     # elast is 30 GPa for all members 
-#     elast = np.array([  [30*10**6], # in kN/mm^2, convert from GPa
-#                         [30*10**6],
-#                         [30*10**6],
-#                         [30*10**6],
-#                         [30*10**6]])
-    
-#     # area is 75000 mm^2 for all members
-#     areas = np.array([  [75000], # in mm^2
-#                         [75000],
-#                         [75000],
-#                         [75000],
-#                         [75000]])
-#     areas = areas * 1/(1000*1000) # convert to mm^2
-    
-#     # inertia is 4.8E8 mm^4 for all members
-#     inertia = np.array([ [4.8*10**8], # in mm^4
-#                          [4.8*10**8],
-#                          [4.8*10**8],
-#                          [4.8*10**8],
-#                          [4.8*10**8]])
-#     inertia = inertia * 1/(1000*1000*1000*1000) # convert to mm^4
-    
-#     restr_by_node = np.array([[1,1,1], # Node 1 Restr X, Y, Theta
-#                               [1,1,1],
-#                               [0,0,0],
-#                               [0,0,0],
-#                               [0,0,0]])
-
-#     restr = nodal_to_dof(restr_by_node)
-
-#     # no pins in this problem
-#     pins = np.array([   [0,1], # elem 1 start pinned=1, elem 1 end pinned=1
-#                         [0,1],
-#                         [1,1],
-#                         [1,1],
-#                         [1,1]])
-    
-#     wind = 12 # kN/m, convert to kN/mm
-
-#     w = np.array([  [0,0], # elem 1 intens_s, intens_e
-#                     [0,0],
-#                     [0,0],
-#                     [0,0],
-#                     [wind,wind]])
-    
-#     #p is the axial load intensity per member
-#     p = np.array([[0],
-#                   [0],
-#                   [0],
-#                   [0],
-#                   [0]])
-    
-#     app_loads_by_node = np.array([  [ 0, 0, 0], #Node 1 Load X, Y, Theta
-#                                     [ 0, 0, 0],      
-#                                     [80, 0, 0],
-#                                     [ 0, 0, 0],
-#                                     [40, 0, 0]])
-    
-#     app_loads = nodal_to_dof(app_loads_by_node)
-
-#     run_analysis(nodes = nodes,
-#                     elem = elem,
-#                     elast = elast,
-#                     areas = areas,
-#                     inertia = inertia,
-#                     restr = restr,
-#                     pins = get_all_pins(elem),
-#                     weld_free_pins=True,
-#                     app_loads = app_loads,
-#                     w = w,
-#                     p = p,
-#                     scale = 1,
-#                     units = {"length":"mm",
-#                              "force" :"kN"}
-                    
-#                     )
-
-# # def ex_7_1():
-# #     nodes = np.array([  [0, 0], # Node 1 X Y, m
-# #                         [0, 5],
-# #                         [2.5,5],
-# #                         [5, 5],
-# #                         [5, 0]])
-    
-# #     nodes *= 1000 # convert to mm
-
-# #     elem = np.array([   [1,2], # elem 1 start node idx, elem 1 end node idx, 1 based idx
-# #                         [2,3],
-# #                         [4,3]])
-    
-# #     # elast is 200 GPa for all members
-# #     elast = np.array([  [200*10**6], # in kN/mm^2, convert from GPa
-# #                         [200*10**6],    
-# #                         [200*10**6]])
-    
-# #     # area is 6500 mm^2 for all members
-# #     areas = np.array([  [6500], # in mm^2
-# #                         [6500],
-# #                         [6500]])
-    
-# #     # inertia is 150E6 mm^4 for all members
-# #     inertia = np.array([ [150*10**6], # in mm^4
-# #                          [150*10**6],
-# #                          [150*10**6]])
-    
-# #     restr_by_node = np.array([[1,1,1], # Node 1 Restr X, Y, Theta
-# #                               []
-
-
-# def frame2_stable():
-
-#     nodes = np.array([
-#         [0, 0],   # Node 1
-#         [0, 4],   # Node 2
-#         [4, 4]    # Node 3
-#     ])
-    
-#     elem = np.array([
-#         [1, 2],
-#         [2, 3]
-#     ])
-    
-#     elast = np.array([
-#         [101e6],
-#         [101e6]
-#     ])
-    
-#     areas = np.array([
-#         [200],
-#         [200]
-#     ])
-    
-#     inertia = np.array([
-#         [5e6],
-#         [5e6]
-#     ])
-    
-#     # Node 1 fully fixed → stabilizes frame
-#     restr_by_node = np.array([
-#         [1,1,0],
-#         [0,0,0],
-#         [1,1,0]
-#     ])
-    
-#     restr = nodal_to_dof(restr_by_node)
-
-#     # Fully rigid connections
-#     pins = np.array([
-#         [0,0],
-#         [1,0]
-#     ])
-    
-#     app_loads_by_node = np.array([
-#         [0,0,0],
-#         [10,-10,0],
-#         [0,0,0]
-#     ])
-    
-#     app_loads = nodal_to_dof(app_loads_by_node)
-    
-#     w = np.array([
-#         [0,0],
-#         [0,0]
-#     ])
-    
-#     p = np.array([
-#         [0],
-#         [0]
-#     ])
-    
-#     run_analysis(nodes, elem, elast, areas, inertia, restr, pins, app_loads, w, p)
-
-
-
-# def frame2_unstable():
-
-#     nodes = np.array([
-#         [0, 0],   # Node 1
-#         [0, 4],   # Node 2
-#         [4, 4]    # Node 3
-#     ])
-    
-#     elem = np.array([
-#         [1, 2],
-#         [2, 3]
-#     ])
-    
-#     elast = np.array([
-#         [101e6],
-#         [101e6]
-#     ])
-    
-#     areas = np.array([
-#         [200],
-#         [200]
-#     ])
-    
-#     inertia = np.array([
-#         [5e6],
-#         [5e6]
-#     ])
-    
-#     # Node 1 fully fixed → stabilizes frame
-#     restr_by_node = np.array([
-#         [1,1,0],
-#         [0,0,0],
-#         [0,0,0]
-#     ])
-    
-#     restr = nodal_to_dof(restr_by_node)
-
-#     # Fully rigid connections
-#     pins = np.array([
-#         [0,0],
-#         [1,0]
-#     ])
-    
-#     app_loads_by_node = np.array([
-#         [0,0,0],
-#         [10,-10,0],
-#         [0,0,0]
-#     ])
-    
-#     app_loads = nodal_to_dof(app_loads_by_node)
-    
-#     w = np.array([
-#         [0,0],
-#         [0,0]
-#     ])
-    
-#     p = np.array([
-#         [0],
-#         [0]
-#     ])
-    
-#     run_analysis(nodes, elem, elast, areas, inertia, restr, pins, app_loads, w, p)
-
-# def hw1():
-#     nodes = np.array([
-#         [0,0],
-#         [72,125]
-#     ])
-    
-#     elem = np.array([[1,2]])
-
-#     elast = np.array([[29000]])
-
-#     areas = np.array([[50]])
-
-#     inertia = np.array([[200]])
-
-#     restr_by_node = np.array([
-#         [1,1,0],
-#         [1,0,0]])
-    
-#     restr = nodal_to_dof(restr_by_node)
-
-#     pins = np.array([[0,0]])
-
-#     app_loads_by_node = np.array([
-#         [0,0,30*12],
-#         [0,-80,0]])
-#     app_loads = nodal_to_dof(app_loads_by_node)
-#     w = np.array([
-#         [0,0]
-#     ])
-    
-#     p = np.array([
-#         [0]
-#     ])
-
-#     run_analysis(nodes, elem, elast, areas, inertia, restr, pins, app_loads, w, p)
     
 
+
+def Frame_1():
+    
+    print("Running analysis on Frame 1")
+
+    nodes = np.array([  [ 0, 0], # Node 1 X Y
+                        [ 2, 4],
+                        [ 6, 4],
+                        [12, 0]])
+    nodes*= 1000
+    
+    elem = np.array([   [1,2],
+                        [2,3],
+                        [3,4]])
+    
+    elast = np.array([  [101],
+                        [101],
+                        [101]])
+    
+    areas = np.array([  [200],
+                        [200],
+                        [200]])
+    
+    inertia = np.array([[5*10**6],
+                        [5*10**6],
+                        [5*10**6]])
+    
+    restr_by_node = np.array([[1,1,0], 
+                              [0,0,0],
+                              [0,0,0],
+                              [1,1,0]])
+    
+    restr = nodal_to_dof(restr_by_node)
+
+    pins = np.array([   [0,0], # elem 1 start pinned=1, elem 1 end
+                        [0,0],
+                        [0,0]])
+    
+    app_loads_by_node = np.array([  [ 0, 0, 0], #Node 1 Load X, Y, Theta
+                                    [10, 0, 0], 
+                                    [ 0, 0, 0], 
+                                    [ 0, 0, 0]])
+    
+    app_loads = nodal_to_dof(app_loads_by_node)
+    
+    w = np.array([  [0,0], # elem 1 intens_s, intens_e
+                    [10/1000,10/1000],
+                    [0,0]])
+    
+    #p is the axial load intensity per member
+    p = np.array([[0],
+                  [0],
+                  [0]])
+    
+    run_analysis(nodes = nodes, 
+                    elem = elem, 
+                    elast = elast, 
+                    areas = areas, 
+                    inertia = inertia, 
+                    restr = restr, 
+                    pins = pins, 
+                    app_loads = app_loads, 
+                    w = w,
+                    p = p,
+                    scale = 10,
+                    units = {"length": "in", "force": "kip"},
+                 )
+    
+def Frame_2():
+    print("Running analysis on Frame 1")
+    
+    # node pos in ft, converted to in
+    nodes = np.array([
+        [0,0],
+        [0,12],
+        [10,12],
+        [10,0]
+        ])
+    nodes *= 12
+    
+    elem = np.array([
+        [1,2],
+        [2,3],
+        [3,4]])
+    
+    elast = get_elem_const_array(29000,elem)
+    
+    inertia = get_elem_const_array(100,elem)
+    
+    areas = get_elem_const_array(40,elem)
+    
+    restr_by_node=np.array([
+            [1,1,1],
+            [0,0,0],
+            [0,0,0],
+            [1,1,1]
+        ])
+    restr = nodal_to_dof(restr_by_node)
+    
+    pins = get_no_pins(elem)
+    
+    app_loads_by_node = np.array([
+            [0,0,0],
+            [0,0,0],
+            [10,0,0],
+            [0,0,0]
+        ])
+    app_loads = nodal_to_dof(app_loads_by_node)
+    
+    w = np.array([
+            [0,0],
+            [8/12,4/12],
+            [0,0]
+        ])
+    
+    p = np.array([
+            [0.5/12],
+            [0],
+            [-0.5/12]
+        ])
+    
+    run_analysis(nodes = nodes, 
+                    elem = elem, 
+                    elast = elast, 
+                    areas = areas, 
+                    inertia = inertia, 
+                    restr = restr, 
+                    pins = pins, 
+                    app_loads = app_loads, 
+                    w = w,
+                    p = p,
+                    scale = 10,
+                    units = {"length": "in", "force": "kip"},
+                 )
     
 if __name__ == "__main__":
-    #Truss_1()
-    #Truss_2()
-    #Beam_1()
+    Truss_1()
+    Truss_2()
+    Beam_1()
     Beam_2()
+    Frame_1()
+    Frame_2()
     raise SystemExit()
